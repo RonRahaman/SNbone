@@ -104,30 +104,83 @@ END IF
    END IF
 #endif
 
-VectorNorm_Local(MyThreadID) = 0.0d0
-DO I = MyStart,MyEnd
-   VectorNorm_Local(MyThreadID) = VectorNorm_Local(MyThreadID) + User_Krylov%Basis(I,1) * User_Krylov%Basis(I,1)
-END DO
-! Reduction over all threads. Two barriers are needed to ensure data is consistent at both points
-!$OMP BARRIER
-IF (MyThreadID .EQ. 1) THEN
-   ReasonForConvergence = 0
-   IterationCount = 0
-   ResidualNorm = 0.0d0
-   DO I = 1,NumThreads
-      ResidualNorm = ResidualNorm + VectorNorm_Local(I)
+!==============================================================================================
+! This works right now
+! !$OMP DO FIRSTPRIVATE(MyStart,MyEnd) PRIVATE(I,J)
+! DO I = 1,NumThreads
+!    VectorNorm_Local(I) = 0.0d0
+!    DO J = MyStart,MyEnd
+!       VectorNorm_Local(I) = VectorNorm_Local(I) + User_Krylov%Basis(J,1) * User_Krylov%Basis(J,1)
+!    END DO
+! END DO
+! !$OMP END DO
+! ! Reduction over all threads. Two barriers are needed to ensure data is consistent at both points
+! !$OMP BARRIER
+! IF (MyThreadID .EQ. 1) THEN
+!    ReasonForConvergence = 0
+!    IterationCount = 0
+!    ResidualNorm = 0.0d0
+!    DO I = 1,NumThreads
+!       ResidualNorm = ResidualNorm + VectorNorm_Local(I)
+!    END DO
+! #ifdef USEMPI
+!    LocalConst = ResidualNorm
+!    CALL MPI_ALLREDUCE(LocalConst,ResidualNorm,1,MPI_DOUBLE_PRECISION,MPI_SUM,ParallelComm,J)
+!    CALL Basic_CheckError(Output_Unit,J,"MPI_ALLREDUCE for ResidualNorm in (Method_FGMRES)")
+! #endif
+!    ResidualNorm = DSQRT(ResidualNorm)
+! #ifdef Local_Debug_FGMRES_Driver
+!    WRITE(Output_Unit,'("[GMRES]...Initial residual norm ",1PE13.6)') ResidualNorm
+! #endif
+! END IF
+! !$OMP BARRIER
+!==============================================================================================
+
+!==============================================================================================
+! This also works, but is slower
+! !$OMP SINGLE
+! ReasonForConvergence = 0
+! IterationCount = 0
+! ResidualNorm = 0.0d0
+! !$OMP END SINGLE
+
+! !$OMP DO
+! DO I = 1, NumThreads
+!    DO J = MyStart,MyEnd
+! !$OMP ATOMIC UPDATE
+!       ResidualNorm = ResidualNorm + User_Krylov%Basis(J,1) * User_Krylov%Basis(J,1)
+! !$OMP END ATOMIC
+!    END DO
+! END DO
+! !$OMP END DO
+
+! !$OMP SINGLE
+! ResidualNorm = DSQRT(ResidualNorm)
+! !$OMP END SINGLE
+!==============================================================================================
+
+!==============================================================================================
+! This also works and is comparable or better than the original performance
+! (depending on A matrix)
+
+!$OMP SINGLE
+ReasonForConvergence = 0
+IterationCount = 0
+ResidualNorm = 0.0d0
+!$OMP END SINGLE
+
+!$OMP DO REDUCTION(+:ResidualNorm)
+DO I = 1, NumThreads
+   DO J = MyStart,MyEnd
+      ResidualNorm = ResidualNorm + User_Krylov%Basis(J,1) * User_Krylov%Basis(J,1)
    END DO
-#ifdef USEMPI
-   LocalConst = ResidualNorm
-   CALL MPI_ALLREDUCE(LocalConst,ResidualNorm,1,MPI_DOUBLE_PRECISION,MPI_SUM,ParallelComm,J)
-   CALL Basic_CheckError(Output_Unit,J,"MPI_ALLREDUCE for ResidualNorm in (Method_FGMRES)")
-#endif
-   ResidualNorm = DSQRT(ResidualNorm)
-#ifdef Local_Debug_FGMRES_Driver
-   WRITE(Output_Unit,'("[GMRES]...Initial residual norm ",1PE13.6)') ResidualNorm
-#endif
-END IF
-!$OMP BARRIER
+END DO
+!$OMP END DO
+
+!$OMP SINGLE
+ResidualNorm = DSQRT(ResidualNorm)
+!$OMP END SINGLE
+
 
 !Setup the relative tolerance limit
 Relative_Stop = ResidualNorm * User_Krylov%Relative_Tolerance 
