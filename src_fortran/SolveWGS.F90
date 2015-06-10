@@ -53,9 +53,12 @@ DO I = 1,SN_GMRESdata%BackVectors
       VectorNorm_Local(J,I) = 0.0d0
    END DO
 END DO
-!$OMP PARALLEL shared(ResidualNorm,VectorNorm,VectorNorm_Local,Conn,AS_ThreadWiseWork,DA_ThreadWiseWork, &
-!$OMP& MM_ThreadWiseWork,LHS_C,RHS_C, &
-!$OMP& NumThreads,GuessIsNonZero,ReasonForConvergence,IterationCount,ParallelComm,ParallelRank) &
+
+!$OMP  PARALLEL &
+!$OMP& default(none) &
+!$OMP& shared(NumVertices, NumAngles, iMethod, SN_GMRESdata, LHS_C, RHS_C, NumThreads, GuessIsNonZero, &
+!$OMP&   ReasonForConvergence, IterationCount, ParallelComm, ParallelRank, &
+!$OMP&   ResidualNorm, VectorNorm, VectorNorm_Local) &
 !$OMP& private(MyThreadID,I,iStart,iEnd)
 #ifdef WITHOMP
    MyThreadID = omp_get_thread_num() + 1
