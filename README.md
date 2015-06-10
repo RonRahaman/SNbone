@@ -70,3 +70,9 @@ task-based programming models), the new task-group semantics should be
 advantageous, as the number of threads is arbitrarily independent of the number
 of task-groups.  However, performance will likely rely on tuning the number of
 and size of task-groups for a given programming model and hardware.  
+
+## FGMRES solver for AVE3
+
+As of the writing of this readme, AVE3 has been optimized in ways that AVE1 and
+AVE2 have not.  For example. the worksharing in AVE3 is handled by and OMP DO
+pragma, rather than user-defined subdivision of work between threads.  

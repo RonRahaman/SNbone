@@ -10,37 +10,30 @@ USE CommonBlock
 IMPLICIT NONE 
 ! Passed in
 PROTEUS_Real LHS_C(NumAngles,NumVertices),RHS_C(NumAngles,NumVertices)
-PROTEUS_Int MyThreadID
-PROTEUS_Int I,J,K,iRowStart,iRowEnd
+PROTEUS_Int I,J,K
 
-#ifdef WITHOMP
-   MyThreadID = omp_get_thread_num() + 1
-   I = NumVertices/NumThreads
-   iRowStart = (MyThreadID-1)*I + 1
-   IRowEnd   = MyThreadID*I
-   IF (MyThreadID .EQ. NumThreads) IRowEnd = NumVertices
-   !WRITE(6,*)'iRowStart=',iRowStart,' iRowEnd=',iRowEnd
-#else
-   MyThreadID = 1
-   iRowStart = 1
-   iRowEnd   = NumVertices
-#endif
 #ifdef WITHBGQHPM
-   IF (MyThreadID .EQ. 1) call hpm_start('AVE3_ApplyA')
+!$OMP SINGLE
+   call hpm_start('AVE3_ApplyA')
+!$OMP END SINGLE
 #endif
 ! This barrier ensures that the incoming vector is fully defined by all threads
+! There is no implicit barrier at the beginning of an OMP DO construct
 !$OMP BARRIER
-DO I = iRowStart,iRowEnd
+!$OMP DO
+DO I = 1,NumVertices
    DO J = NZS_RowLoc(I),NZS_RowLoc(I+1)-1
       DO K = 1,NumAngles
          LHS_C(K,I) = LHS_C(K,I) + NZS_Data(K,J)*RHS_C(K,NZS_ColNum(J))
       END DO
    END DO
 END DO
-! This second barrier is needed because the FGMRES threadwise splitting is currently different than the above. Likely need to change that
-!$OMP BARRIER
+!$OMP END DO
+! There is an implicit barrier at the end of OMP DO
 #ifdef WITHBGQHPM
-   IF (MyThreadID .EQ. 1) call hpm_stop('AVE3_ApplyA') ! Stops the hardware counters
+!$OMP SINGLE
+   call hpm_stop('AVE3_ApplyA') ! Stops the hardware counters
+!$OMP END SINGLE
 #endif
 END SUBROUTINE SolveWGS_PassThrough_AVE3
 
