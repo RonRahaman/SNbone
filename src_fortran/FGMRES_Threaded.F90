@@ -138,76 +138,23 @@ END IF
 !$OMP END SINGLE
 #endif
 
-!==============================================================================================
-! This works right now
-! !$OMP DO FIRSTPRIVATE(MyStart,MyEnd) PRIVATE(I,J)
-! DO I = 1,NumThreads
-!    VectorNorm_Local(I) = 0.0d0
-!    DO J = MyStart,MyEnd
-!       VectorNorm_Local(I) = VectorNorm_Local(I) + User_Krylov%Basis(J,1) * User_Krylov%Basis(J,1)
-!    END DO
-! END DO
-! !$OMP END DO
-! ! Reduction over all threads. Two barriers are needed to ensure data is consistent at both points
-! !$OMP BARRIER
-! IF (MyThreadID .EQ. 1) THEN
-!    ReasonForConvergence = 0
-!    IterationCount = 0
-!    ResidualNorm = 0.0d0
-!    DO I = 1,NumThreads
-!       ResidualNorm = ResidualNorm + VectorNorm_Local(I)
-!    END DO
-! #ifdef USEMPI
-!    LocalConst = ResidualNorm
-!    CALL MPI_ALLREDUCE(LocalConst,ResidualNorm,1,MPI_DOUBLE_PRECISION,MPI_SUM,ParallelComm,J)
-!    CALL Basic_CheckError(Output_Unit,J,"MPI_ALLREDUCE for ResidualNorm in (Method_FGMRES)")
-! #endif
-!    ResidualNorm = DSQRT(ResidualNorm)
-! #ifdef Local_Debug_FGMRES_Driver
-!    WRITE(Output_Unit,'("[GMRES]...Initial residual norm ",1PE13.6)') ResidualNorm
-! #endif
-! END IF
-! !$OMP BARRIER
-!==============================================================================================
-
-!==============================================================================================
-! This also works, but is slower
-! !$OMP SINGLE
-! ReasonForConvergence = 0
-! IterationCount = 0
-! ResidualNorm = 0.0d0
-! !$OMP END SINGLE
-
-! !$OMP DO
-! DO I = 1, NumThreads
-!    DO J = MyStart,MyEnd
-! !$OMP ATOMIC UPDATE
-!       ResidualNorm = ResidualNorm + User_Krylov%Basis(J,1) * User_Krylov%Basis(J,1)
-! !$OMP END ATOMIC
-!    END DO
-! END DO
-! !$OMP END DO
-
-! !$OMP SINGLE
-! ResidualNorm = DSQRT(ResidualNorm)
-! !$OMP END SINGLE
-!==============================================================================================
-
-!==============================================================================================
-! This also works and is comparable or better than the original performance
-! (depending on A matrix)
-
 !$OMP SINGLE
 ReasonForConvergence = 0
 IterationCount = 0
 ResidualNorm = 0.0d0
 !$OMP END SINGLE
 
+! !$OMP DO REDUCTION(+:ResidualNorm)
+! DO I = 1, NumThreads
+!    DO J = MyStart,MyEnd
+!       ResidualNorm = ResidualNorm + User_Krylov%Basis(J,1) * User_Krylov%Basis(J,1)
+!    END DO
+! END DO
+! !$OMP END DO
+
 !$OMP DO REDUCTION(+:ResidualNorm)
-DO I = 1, NumThreads
-   DO J = MyStart,MyEnd
-      ResidualNorm = ResidualNorm + User_Krylov%Basis(J,1) * User_Krylov%Basis(J,1)
-   END DO
+DO I = 1, NumVertices*NumAngles
+   ResidualNorm = ResidualNorm + User_Krylov%Basis(I,1) * User_Krylov%Basis(I,1)
 END DO
 !$OMP END DO
 
@@ -221,22 +168,22 @@ Relative_Stop = ResidualNorm * User_Krylov%Relative_Tolerance
 ! Setup the divergence tolerance limit
 Divergence_Stop = ResidualNorm *(1.0d0 + User_Krylov%Divergence_Tolerance)
 
-#ifdef Local_Debug_FGMRES_Driver
-   IF (MyThreadID .EQ. 1) THEN
+!#ifdef Local_Debug_FGMRES_Driver
+!$OMP SINGLE
       WRITE(Output_Unit,'("[GMRES]...Max Outer        = ",I14)') Maximum_Outer
       WRITE(Output_Unit,'("[GMRES]...Max Inner        = ",I14)') User_Krylov%BackVectors
       WRITE(Output_Unit,'("[GMRES]...Total Max Iter   = ",I14)') User_Krylov%Maximum_Iterations
       WRITE(Output_Unit,'("[GMRES]...Absolute target  = ",1PE13.6)') User_Krylov%Absolute_Tolerance
       WRITE(Output_Unit,'("[GMRES]...Relative target  = ",1PE13.6)') Relative_Stop
       WRITE(Output_Unit,'("[GMRES]...Divergence Stop  = ",1PE13.6)') Divergence_Stop
-   END IF
-#endif
+!$OMP END SINGLE
+!#endif
 
 IF (ResidualNorm .EQ. 0.0d0) GOTO 1000 ! Yes, there is nothing to do because we have the exact answer
 
 DO Outer = 1, Maximum_Outer
-   ! Serial work
-   IF (MyThreadID .EQ. 1) THEN
+! It might be possible to workshare this in parallel...
+!$OMP SINGLE
       DO J = 1,User_Krylov%BackVectors+1
          DO I = 1,User_Krylov%BackVectors
             User_Krylov%Hessenberg(I,J) = 0.0d0
@@ -246,15 +193,17 @@ DO Outer = 1, Maximum_Outer
          User_Krylov%Modified_RHS(J) = 0.0d0
       END DO
       User_Krylov%Modified_RHS(1) = ResidualNorm ! No barrier is needed for this as I assume we need one just before and after Apply_PC and Apply_A
-   END IF
+!$OMP END SINGLE
 
    ! For the initialization the Residual is in Basis(*,1) and its norm in ResidualNorm    
    LocalConst = 1.0d0 / ResidualNorm
-   DO I = MyStart,MyEnd
+!$OMP DO
+   DO I = 1, NumVertices*NumAngles
       User_Krylov%Basis(I,1)    =  User_Krylov%Basis(I,1) * LocalConst
       User_Krylov%Basis(I,2)    = 0.0d0
       User_Krylov%PC_Basis(I,1) = 0.0d0
    END DO
+!$OMP END DO
 
    ! Iterate: For j =1,2,...m do:
    !   h(i,j) = (Avj,vi), i = 1,...,j
@@ -265,32 +214,33 @@ DO Outer = 1, Maximum_Outer
       ! Apply the preconditionner to the basis vector and store it in a intermediate vector
       CALL Apply_PC(User_Krylov%Basis(1,Inner),User_Krylov%PC_Basis(1,Inner))
 #ifdef Local_Debug_FGMRES_Driver
-      IF (MyThreadID .EQ. 1) THEN
+!$OMP SINGLE
          WRITE(Output_Unit,'("[GMRES]...At Outer ",I4," and Inner ",I4," some vectors:")') Outer,Inner
          DO I = 1, User_Krylov%Local_Owned
             WRITE(Output_Unit,'("[GMRES]...residual/norm=V(",I4,") = ",1PE13.6," PC*V(",I4,") = ",1PE13.6)') &
                  I, User_Krylov%Basis(I,Inner),I,User_Krylov%PC_Basis(I,Inner)
          END DO
-      END IF
+!$OMP END SINGLE
 #endif
       ! Apply A to the intermediate vector and store it in the next basis point before orthonormalization
       CALL Apply_A(User_Krylov%PC_Basis(1,Inner),User_Krylov%Basis(1,Inner+1))
 #ifdef Local_Debug_FGMRES_Driver
-      IF (MyThreadID .EQ. 1) THEN
+!$OMP SINGLE
          WRITE(Output_Unit,'("[GMRES]...At Outer ",I4," and Inner ",I4," intermediate vectors:")') Outer,Inner
          DO I = 1, User_Krylov%Local_Owned
             WRITE(Output_Unit,'("[GMRES]...A*Z=V(",I4,") = ",1PE13.6)') I, User_Krylov%Basis(I,Inner+1)
          END DO
-      END IF
+!$OMP END SINGLE
 #endif
       ! We need to reduce on Hessenberg(:,K) across all threads
       DO I = 1, Inner
          HessenNorm_Local(MyThreadID,I) = 0.0d0
-         DO J = MyStart,MyEnd
+!$OMP DO
+         DO J = 1, NumVertices*NumAngles
             HessenNorm_Local(MyThreadID,I) = HessenNorm_Local(MyThreadID,I) + User_Krylov%Basis(J,Inner+1)*User_Krylov%Basis(J,I)
          END DO
+!$OMP END DO
       END DO
-!$OMP BARRIER
 
       IF (MyThreadID .EQ. 1) THEN
          DO I = 1,Inner
