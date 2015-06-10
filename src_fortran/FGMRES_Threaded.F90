@@ -276,18 +276,18 @@ DO Outer = 1, Maximum_Outer
 !$OMP END DO
       END DO
 
-      ! Compute its norm
-      VectorNorm_Local(MyThreadID) = 0.0d0
-      DO I = MyStart,MyEnd
-         VectorNorm_Local(MyThreadID) = VectorNorm_Local(MyThreadID) + User_Krylov%Basis(I,Inner+1)*User_Krylov%Basis(I,Inner+1)
+!========================================================================
+!$OMP SINGLE
+   VectorNorm = 0.0d0
+!$OMP END SINGLE
+
+!$OMP DO REDUCTION(+:VectorNorm)
+      DO I = 1, NumVertices*NumAngles
+         VectorNorm = VectorNorm + User_Krylov%Basis(I,Inner+1)*User_Krylov%Basis(I,Inner+1)
       END DO
-      ! Reduction over all threads. Two barriers are needed to ensure data is consistent at both points
-!$OMP BARRIER
-      IF (MyThreadID .EQ. 1) THEN
-         VectorNorm = 0.0d0
-         DO I = 1,NumThreads
-            VectorNorm = VectorNorm + VectorNorm_Local(I)
-         END DO
+!$OMP END DO
+
+!$OMP SINGLE
 #ifdef USEMPI
          LocalConst = VectorNorm
          CALL MPI_ALLREDUCE(LocalConst,VectorNorm,1,MPI_DOUBLE_PRECISION,MPI_SUM,ParallelComm,J)
@@ -331,11 +331,10 @@ DO Outer = 1, Maximum_Outer
             IterationCount         = IterationCount + 1
             User_Krylov%Iterations = User_Krylov%Iterations + 1
          END IF ! Vector norm = 0
-      END IF
-!$OMP BARRIER
+!$OMP END SINGLE
 
 #ifdef Local_Debug_FGMRES_Driver
-      IF (MyThreadID .EQ. 1) THEN
+!$OMP SINGLE
          WRITE(Output_Unit,'("[GMRES]...VectorNorm=",1PE13.6)') VectorNorm
          DO I = 1, User_Krylov%Local_Owned
             WRITE(Output_Unit,'("[GMRES]...New XX(",I4,") = ",1PE13.6)') I, User_Krylov%Basis(I,Inner+1) * VectorNorm
@@ -354,22 +353,25 @@ DO Outer = 1, Maximum_Outer
             WRITE(Output_Unit,'("[GMRES]......RHS(",I4,") = ",1PE13.6)') I,User_Krylov%Modified_RHS(I)
          END DO
          WRITE(Output_Unit,'("[GMRES]...At Outer ",I4," and Inner ",I4," residual = ",1PE13.6)') Outer,Inner,ResidualNorm
-      END IF
-!$OMP BARRIER
+!$OMP END SINGLE
 #endif
       ! if Vector Norm == 0, we reach the happy break down.
       IF (VectorNorm .EQ. 0.0d0) EXIT ! Inner iteration loop
 
       IF (Inner .EQ. User_Krylov%BackVectors) THEN ! We have nothing left to initialize so...
-         DO I = MyStart,MyEnd
+!$OMP DO
+         DO I = 1, NumVertices*NumAngles
             User_Krylov%Basis(I,Inner+1) = User_Krylov%Basis(I,Inner+1) * VectorNorm
          END DO
+!$OMP END DO
       ELSE
-         DO I = MyStart,MyEnd
+!$OMP DO
+         DO I = 1, NumVertices*NumAngles
             User_Krylov%Basis(I,Inner+1)    = User_Krylov%Basis(I,Inner+1) * VectorNorm
             User_Krylov%Basis(I,Inner+2)    = 0.0d0
             User_Krylov%PC_Basis(I,Inner+1) = 0.0d0
          END DO
+!$OMP END DO
       END IF
 
       ! Test if the Residual meets the stopping criterion
@@ -387,9 +389,9 @@ DO Outer = 1, Maximum_Outer
    ! All we need is the matrix H_m and the vectors (v1,...vm)
    ! We only need to compute h(i,m) = (A*vm, vi)
 #ifdef Local_Debug_FGMRES_Driver
-   IF (MyThreadID .EQ. 1) THEN
+!$OMP SINGLE
       WRITE(Output_Unit,'("[GMRES]...Exit inner loop with inner = ",I4)') Inner
-   END IF
+!$OMP END SINGLE
 #endif
    IF (ResidualNorm .GT. Divergence_Stop) THEN
       ReasonForConvergence = -4 ! KSP_DIVERGED_DTOL
@@ -399,7 +401,7 @@ DO Outer = 1, Maximum_Outer
    ! Compute Ym by solving Ym = R-1 * G
    ! R is an upper triangular matrix, the modified Hessenberg matrix
 ! OMP BARRIER  ! This barrier is not needed as both instances of exiting out of the inner loop will have consistent data
-   IF (MyThreadID .EQ. 1) THEN
+!$OMP SINGLE
       DO I = Inner, 1, -1
          DO J = I+1,Inner
             User_Krylov%Modified_RHS(I) = User_Krylov%Modified_RHS(I) - User_Krylov%Hessenberg(I,J)*User_Krylov%Modified_RHS(J)
@@ -417,58 +419,62 @@ DO Outer = 1, Maximum_Outer
          WRITE(Output_Unit,'("[GMRES]...Exiting RHS(",I4,") = ",1PE13.6)') I,User_Krylov%Modified_RHS(I)
       END DO
 #endif
-   END IF
-!$OMP BARRIER
+!$OMP END SINGLE
 
    ! Update the solution Xm = X0 + Zm*Y
    DO J = 1,Inner
-      DO I = MyStart,MyEnd
+   ! WORKSHARE also works here, but I found it was slower
+!$OMP DO
+      DO I = 1, NumVertices*NumAngles
          Solution(I) = Solution(I) + User_Krylov%PC_Basis(I,J)*User_Krylov%Modified_RHS(J)
       END DO
+!$OMP END DO
    END DO
 
 #ifdef Local_Debug_FGMRES_Driver
-   IF (MyThreadID .EQ. 1) THEN
+!$OMP SINGLE
       WRITE(Output_Unit,'("[GMRES]...Solution after outer iteration ",I4)') Outer
       DO I = 1,User_Krylov%Local_Owned
          WRITE(Output_Unit,'("[GMRES]...X(",I4,") = " 1PE13.6)') I,Solution(I)
       END DO
-   END IF
+!$OMP END SINGLE
 #endif
 
    ! Initialize the basis so the user does not have to do it
-   DO I = MyStart,MyEnd
+!$OMP DO
+   DO I = 1, NumVertices*NumAngles
       User_Krylov%Basis(I,1) = 0.0d0
    END DO
+!$OMP END DO
 
    ! Compute r_m = f- A x_m and store it in Scratch_Basis 
-!$OMP BARRIER
    CALL Apply_A(Solution,User_Krylov%Basis)
-!$OMP BARRIER
    
-   VectorNorm_Local(MyThreadID) = 0.0d0
-   DO I = MyStart,MyEnd
+!============================================================================================
+!$OMP SINGLE
+   ResidualNorm = 0.0d0
+!$OMP END SINGLE
+
+!$OMP DO REDUCTION(+:ResidualNorm)
+   DO I = 1, NumVertices*NumAngles
       User_Krylov%Basis(I,1) = RightHandSide(I) - User_Krylov%Basis(I,1)
-      VectorNorm_Local(MyThreadID) = VectorNorm_Local(MyThreadID) + User_Krylov%Basis(I,1)*User_Krylov%Basis(I,1)
+      ResidualNorm = ResidualNorm + User_Krylov%Basis(I,1)*User_Krylov%Basis(I,1)
    END DO
-   ! Reduction over all threads. Two barriers are needed to ensure data is consistent at both points
-!$OMP BARRIER
-   IF (MyThreadID .EQ. 1) THEN
-      ResidualNorm = 0.0d0
-      DO I = 1,NumThreads
-         ResidualNorm = ResidualNorm + VectorNorm_Local(I)
-      END DO
+!$OMP END DO
+
+!$OMP SINGLE
 #ifdef USEMPI
       LocalConst = ResidualNorm
       CALL MPI_ALLREDUCE(LocalConst,VectorNorm,1,MPI_DOUBLE_PRECISION,MPI_SUM,ParallelComm,J)
       CALL Basic_CheckError(Output_Unit,J,"MPI_ALLREDUCE for ResidualNorm in (Method_FGMRES)")
 #endif
       ResidualNorm = DSQRT(ResidualNorm)
-   END IF
-!$OMP BARRIER
+!$OMP END SINGLE
 
 #ifdef Local_Debug_FGMRES_Driver
-   IF (MyThreadID .EQ. 1) WRITE(Output_Unit,'("[GMRES]...At FinalCheck residual = ",1PE13.6)') ResidualNorm
+!$OMP SINGLE
+   WRITE(Output_Unit,'("[GMRES]...At FinalCheck residual = ",1PE13.6)') ResidualNorm
+!$OMP END SINGLE
 #endif
        ! Test if the ResidualNorm meet the stopping criterion
     IF (ResidualNorm .LE. 0.0D0) THEN ! Happy breakdown convergence
@@ -484,8 +490,10 @@ DO Outer = 1, Maximum_Outer
        ReasonForConvergence = 1 ! KSP_HIT_ITERATION_LIMIT
        EXIT
     ELSE
-      IF ((ParallelRank .EQ. 0) .AND. (MyThreadID .EQ. 1)) THEN
+      IF (ParallelRank .EQ. 0) THEN
+!$OMP SINGLE
          WRITE(Output_Unit,'("[SN-KERNEL]...Outer ",I6," after ",I6," inners has residual = ",1PE13.6)') Outer,Inner,ResidualNorm
+!$OMP END SINGLE
       END IF
     END IF
 END DO ! Outer
