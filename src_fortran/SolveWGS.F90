@@ -54,46 +54,25 @@ DO I = 1,SN_GMRESdata%BackVectors
    END DO
 END DO
 
-!$OMP  PARALLEL &
-!$OMP& default(none) &
-!$OMP& shared(NumVertices, NumAngles, iMethod, SN_GMRESdata, LHS_C, RHS_C, NumThreads, GuessIsNonZero, &
-!$OMP&   ReasonForConvergence, IterationCount, ParallelComm, ParallelRank, &
-!$OMP&   ResidualNorm, VectorNorm, VectorNorm_Local) &
-!$OMP& private(MyThreadID,I,iStart,iEnd)
-#ifdef WITHOMP
-   MyThreadID = omp_get_thread_num() + 1
-   I = (NumVertices*NumAngles)/NumThreads
-   iStart = (MyThreadID-1)*I + 1
-   IF (MyThreadID .EQ. NumThreads) THEN
-      iEnd = NumVertices*NumAngles
-   ELSE
-      iEnd = MyThreadID*I
-   END IF
-#else
-   MyThreadID = 1
-   iStart = 1
-   iEnd = NumVertices*NumAngles
-#endif
 IF      (iMethod .EQ. 1) THEN
-   CALL FGMRES_Threaded(Output_Unit,SN_GMRESdata,LHS_C,RHS_C,                                           &
-                      MyThreadID,iStart,iEnd,                                                                  &
-                      NumThreads,GuessIsNonZero,ReasonForConvergence,IterationCount,ParallelComm,ParallelRank, &
+   CALL FGMRES_Threaded(SN_GMRESdata,LHS_C,RHS_C,                                           &
+                      
+                      GuessIsNonZero,ReasonForConvergence,IterationCount, &
                       ResidualNorm,VectorNorm,VectorNorm_Local,VectorNorm_Local,                               &
                       SolveWGS_PassThrough_AVE1,SolveWGS_PassThrough_PC)
 ELSE IF (iMethod .EQ. 2) THEN
-   CALL FGMRES_Threaded(Output_Unit,SN_GMRESdata,LHS_C,RHS_C,                                           &
-                      MyThreadID,iStart,iEnd,                                                                  &
-                      NumThreads,GuessIsNonZero,ReasonForConvergence,IterationCount,ParallelComm,ParallelRank, &
+   CALL FGMRES_Threaded(SN_GMRESdata,LHS_C,RHS_C,                                           &
+                     
+                      GuessIsNonZero,ReasonForConvergence,IterationCount, &
                       ResidualNorm,VectorNorm,VectorNorm_Local,VectorNorm_Local,                               &
                       SolveWGS_PassThrough_AVE2,SolveWGS_PassThrough_PC)
 ELSE IF (iMethod .EQ. 3) THEN
-   CALL FGMRES_Threaded(Output_Unit,SN_GMRESdata,LHS_C,RHS_C,                                           &
-                      MyThreadID,iStart,iEnd,                                                                  &
-                      NumThreads,GuessIsNonZero,ReasonForConvergence,IterationCount,ParallelComm,ParallelRank, &
+   CALL FGMRES_Threaded(SN_GMRESdata,LHS_C,RHS_C,                                           &
+                    
+                      NumThreads,GuessIsNonZero,ReasonForConvergence,IterationCount, &
                       ResidualNorm,VectorNorm,VectorNorm_Local,VectorNorm_Local,                               &
                       SolveWGS_PassThrough_AVE3,SolveWGS_PassThrough_PC)
 END IF
-!$OMP END PARALLEL
 
 DEALLOCATE(VectorNorm_Local)
 
