@@ -89,38 +89,53 @@ IF (Maximum_Outer*User_Krylov%BackVectors .NE. User_Krylov%Maximum_Iterations) M
 #ifdef Local_Debug_FGMRES_Driver
    WRITE(Output_Unit,*)'MyThreadID = ',MyThreadID
    WRITE(Output_Unit,*)'NumThreads = ',NumThreads
-   IF (MyThreadID .EQ. 1) THEN
+!$OMP SINGLE
       WRITE(Output_Unit,'("[GMRES]...Initial guess ",I9)') User_Krylov%Local_Owned
       DO I = 1,User_Krylov%Local_Owned
          WRITE(Output_Unit,'("[GMRES]...solution(",I4,") = ",1PE13.6," RHS=",1PE13.6)') I, Solution(I),RightHandSide(I)
       END DO
-   END IF
+!$OMP END SINGLE
 #endif
 
 
 IF (GuessIsNonZero) THEN ! Apply A to the initial guess
-   DO I = MyStart,MyEnd
+!$OMP DO
+   DO I = 1, NumVertices*NumAngles
       User_Krylov%Basis(I,1) = 0.0d0
    END DO
+!$OMP END DO
    ! Start: Compute the initial residual r0 = Ax0 - b and the first basis vector v1 = r0/||r0||
    CALL Apply_A(Solution,User_Krylov%Basis) ! (1,1)
-   DO I = MyStart,MyEnd
+!$OMP DO
+   DO I = 1, NumVertices*NumAngles
       User_Krylov%Basis(I,1) = RightHandSide(I) - User_Krylov%Basis(I,1)
    END DO
+!$OMP END DO
 ELSE ! Zero solution if GuessIsNonZero .EQ. False
-   DO I = MyStart,MyEnd
+!========================================================================
+!$OMP DO
+   DO I = 1, NumVertices*NumAngles
       Solution(I) = 0.0d0
       User_Krylov%Basis(I,1) = RightHandSide(I)
    END DO
+!$OMP END DO
+!========================================================================
+! An alternative is to use the WORKSHARE construct, but in this case, the
+! performance improvements are trivial.
+! !$OMP WORKSHARE
+!       Solution = 0.0d0
+!       User_Krylov%Basis(:,1) = RightHandSide(:)
+! !$OMP END WORKSHARE
+!========================================================================
 END IF
 
 #ifdef Local_Debug_FGMRES_Driver
-   IF (MyThreadID .EQ. 1) THEN
+!$OMP SINGLE
       WRITE(Output_Unit,'("[GMRES]...Initial residual")')
       DO I = 1,User_Krylov%Local_Owned
          WRITE(Output_Unit,'("[GMRES]...Basis(",I4,") = ",1PE13.6)') I, User_Krylov%Basis(I,1)
       END DO
-   END IF
+!$OMP END SINGLE
 #endif
 
 !==============================================================================================
