@@ -242,12 +242,9 @@ DO Outer = 1, Maximum_Outer
 !$OMP END DO
       END DO
 
-      IF (MyThreadID .EQ. 1) THEN
+!$OMP SINGLE
          DO I = 1,Inner
-            LocalConst = 0.0d0
-            DO J = 1,NumThreads
-               LocalConst = LocalConst + HessenNorm_Local(J,I)
-            END DO
+            LocalConst = sum(HessenNorm_Local(:,I))
 #ifdef USEMPI
             User_Krylov%Hessenberg(I,User_Krylov%BackVectors+1) = LocalConst
 #else
@@ -260,22 +257,23 @@ DO Outer = 1, Maximum_Outer
                             User_Krylov%Local_Owned,MPI_DOUBLE_PRECISION,MPI_SUM,ParallelComm,J)
          CALL Basic_CheckError(Output_Unit,J,'MPI_ALLREDUCE Hessenberg_Column in (Basic_FillHessenberg)')
 #endif
-      END IF
-!$OMP BARRIER
+!$OMP END SINGLE
 
 #ifdef Local_Debug_FGMRES_Driver
-      IF (MyThreadID .EQ. 1) THEN
+!$OMP SINGLE
          WRITE(Output_Unit,'("[GMRES]...Hessenberg matrix K=",I3)') 
          DO I = 1,Inner
             WRITE(Output_Unit,'("[GMRES]...Hessenberg(",I3,") = ",100(1PE13.6,1X))') I, (User_Krylov%Hessenberg(I,J),J=1,Inner)
          END DO
-      END IF
+!$OMP END SINGLE
 #endif
       ! Compute an new orthogonal vector
       DO J = 1,Inner
-         DO I = MyStart,MyEnd
+!$OMP DO
+         DO I = 1, NumVertices*NumAngles
             User_Krylov%Basis(I,Inner+1) = User_Krylov%Basis(I,Inner+1) - User_Krylov%Hessenberg(J,Inner)*User_Krylov%Basis(I,J)
          END DO
+!$OMP END DO
       END DO
 
       ! Compute its norm
