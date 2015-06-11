@@ -24,7 +24,7 @@
 RECURSIVE SUBROUTINE FGMRES_Threaded(User_Krylov,Solution,RightHandSide,                    &
 
                      GuessIsNonZero,ReasonForConvergence,IterationCount,  &
-                     ResidualNorm,VectorNorm,VectorNorm_Local,HessenNorm_Local,                                &
+                     ResidualNorm,VectorNorm, &
                      Apply_A,Apply_PC)
 #ifdef WITHOMP
   USE OMP_LIB
@@ -45,8 +45,6 @@ PROTEUS_Log  GuessIsNonZero             ! If true the vector stored in Solution 
 PROTEUS_Int  ReasonForConvergence       ! Divergence (<0), MaxIterationCount (=0), Convergence (>0)
 PROTEUS_Int  IterationCount             ! Count the total number of inner iteration (number of time we apply A and orthogonalize)
 PROTEUS_Real ResidualNorm,VectorNorm      ! Norm of the residual that is returned (a shared variable between the threads)
-PROTEUS_Real VectorNorm_Local(NumThreads) ! An array used to store threadwise copies of the vector sum
-PROTEUS_Real HessenNorm_Local(NumThreads,User_Krylov%BackVectors)
 PROTEUS_Real HessenNorm_Shared(User_Krylov%BackVectors)
 ! Subroutines that are called
 EXTERNAL  Apply_A                       ! The subroutine which applies the A matrix
@@ -57,32 +55,16 @@ PROTEUS_Int  Maximum_Outer              ! Maximum of outer iteration to stop eve
 PROTEUS_Real LocalConst,Relative_Stop,Divergence_Stop ! These could be thread shared
 PROTEUS_Real Cosinus,Sinus,aconst,bconst ! These are only needed on the root thread
 PROTEUS_Int  I,J,K,Outer,Inner            ! Thes must be thread specific to avoid unnecessary barriers
-PROTEUS_Int  MyThreadID, MyStart, MyEnd   ! Also private
 
 !$OMP  PARALLEL &
 !$OMP& default(none) &
 !$OMP& shared(NumVertices, NumAngles, User_Krylov, Solution, RightHandSide, &
 !$OMP&   NumThreads, GuessIsNonZero, &
 !$OMP&   ReasonForConvergence, IterationCount, ParallelComm, ParallelRank, &
-!$OMP&   ResidualNorm, VectorNorm, VectorNorm_Local, HessenNorm_Local, &
+!$OMP&   ResidualNorm, VectorNorm, &
 !$OMP&   HessenNorm_Shared) &
 !$OMP& private(Maximum_Outer,LocalConst,Relative_Stop,Divergence_Stop, &
-!$OMP&   Cosinus,Sinus,aconst,bconst,I,J,K,Outer,Inner,MyThreadID,MyStart,MyEnd)
-
-#ifdef WITHOMP
-   MyThreadID = omp_get_thread_num() + 1
-   I = (NumVertices*NumAngles)/NumThreads
-   MyStart = (MyThreadID-1)*I + 1
-   IF (MyThreadID .EQ. NumThreads) THEN
-      MyEnd = NumVertices*NumAngles
-   ELSE
-      MyEnd = MyThreadID*I
-   END IF
-#else
-   MyThreadID = 1
-   MyStart = 1
-   MyEnd = NumVertices*NumAngles
-#endif
+!$OMP&   Cosinus,Sinus,aconst,bconst,I,J,K,Outer,Inner)
 
 ! Grab the value from the structure
 Maximum_Outer = User_Krylov%Maximum_Iterations/User_Krylov%BackVectors

@@ -57,17 +57,17 @@ END DO
 IF      (iMethod .EQ. 1) THEN
    CALL FGMRES_Threaded(SN_GMRESdata,LHS_C,RHS_C, & 
                       GuessIsNonZero,ReasonForConvergence,IterationCount, &
-                      ResidualNorm,VectorNorm,VectorNorm_Local,VectorNorm_Local,  &
+                      ResidualNorm,VectorNorm,&
                       SolveWGS_PassThrough_AVE1,SolveWGS_PassThrough_PC)
 ELSE IF (iMethod .EQ. 2) THEN
    CALL FGMRES_Threaded(SN_GMRESdata,LHS_C,RHS_C, &
                       GuessIsNonZero,ReasonForConvergence,IterationCount, &
-                      ResidualNorm,VectorNorm,VectorNorm_Local,VectorNorm_Local, &
+                      ResidualNorm,VectorNorm,&
                       SolveWGS_PassThrough_AVE2,SolveWGS_PassThrough_PC)
 ELSE IF (iMethod .EQ. 3) THEN
    CALL FGMRES_Threaded(SN_GMRESdata,LHS_C,RHS_C, &
                       GuessIsNonZero,ReasonForConvergence,IterationCount, &
-                      ResidualNorm,VectorNorm,VectorNorm_Local,VectorNorm_Local, &
+                      ResidualNorm,VectorNorm,&
                       SolveWGS_PassThrough_AVE3,SolveWGS_PassThrough_PC)
 END IF
 
