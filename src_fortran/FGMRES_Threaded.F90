@@ -11,21 +11,25 @@
 !  Copyright(c) 2005 Argonne National Laboratory
 !----------------------------------------------------------------------------------------------------
 !----------------------------------------------------------------------------------------------------
-! Externally threaded version of the subroutine
+! Internally threaded version of the subroutine
 !----------------------------------------------------------------------------------------------------
-! Barriers if needed must be erected around all user subroutines
-! Incoming vectors are shared and users must put barriers in place to prevent issues
-! This routine supports combined MPI and OpenMP so long as MyThreadID=0 matches the MPI rank
+!
+! This version of the subroutine has a number of differences, compared to the
+! version in the 'master' branch:
+!   * It is internally-threaded.  Variables declared here are not private unless
+!     specified in the OMP PARALLEL pragma.
+!   * Worksharing is handled by OMP worksharing constructs (mostly, OMP DO).  In
+!     the master version, the work regions were assigned to each thread based on
+!     its thread ID, the total number of threads, and the total available work.
+!     In this version, it is not necessary to know the total number of threads
+!     or any thread ID, as the worksharing is handled by OMP constructs.  
 ! 
-! Because this subroutine is called by each thread, all local variables will be unique to each thread
 !----------------------------------------------------------------------------------------------------
 !----------------------------------------------------------------------------------------------------
 #include "PROTEUS_Preprocess.h"
-RECURSIVE SUBROUTINE FGMRES_Threaded(User_Krylov,Solution,RightHandSide,                    &
-
+RECURSIVE SUBROUTINE FGMRES_Threaded(User_Krylov,Solution,RightHandSide,  &
                      GuessIsNonZero,ReasonForConvergence,IterationCount,  &
-                     ResidualNorm,VectorNorm, &
-                     Apply_A,Apply_PC)
+                     ResidualNorm,VectorNorm, Apply_A,Apply_PC)
 #ifdef WITHOMP
   USE OMP_LIB
 #endif
@@ -44,7 +48,7 @@ PROTEUS_Real RightHandSide(User_Krylov%Local_Owned) ! Right hand side of the equ
 PROTEUS_Log  GuessIsNonZero             ! If true the vector stored in Solution is used as the initial guess, otherwise a null vector is used
 PROTEUS_Int  ReasonForConvergence       ! Divergence (<0), MaxIterationCount (=0), Convergence (>0)
 PROTEUS_Int  IterationCount             ! Count the total number of inner iteration (number of time we apply A and orthogonalize)
-PROTEUS_Real ResidualNorm,VectorNorm      ! Norm of the residual that is returned (a shared variable between the threads)
+PROTEUS_Real ResidualNorm,VectorNorm    ! Norm of the residual that is returned (a shared variable between the threads)
 PROTEUS_Real HessenNorm_Shared(User_Krylov%BackVectors)
 ! Subroutines that are called
 EXTERNAL  Apply_A                       ! The subroutine which applies the A matrix
@@ -53,8 +57,8 @@ EXTERNAL  Apply_PC                      ! The subroutine which applies the preco
 ! Local Thread specific variables
 PROTEUS_Int  Maximum_Outer              ! Maximum of outer iteration to stop even if we do not get convergence 
 PROTEUS_Real LocalConst,Relative_Stop,Divergence_Stop ! These could be thread shared
-PROTEUS_Real Cosinus,Sinus,aconst,bconst ! These are only needed on the root thread
-PROTEUS_Int  I,J,K,Outer,Inner            ! Thes must be thread specific to avoid unnecessary barriers
+PROTEUS_Real aconst,bconst              ! These are only needed on the root thread
+PROTEUS_Int  I,J,K,Outer,Inner          ! Thes must be thread specific to avoid unnecessary barriers
 
 !$OMP  PARALLEL &
 !$OMP& default(none) &
@@ -64,7 +68,7 @@ PROTEUS_Int  I,J,K,Outer,Inner            ! Thes must be thread specific to avoi
 !$OMP&   ResidualNorm, VectorNorm, &
 !$OMP&   HessenNorm_Shared) &
 !$OMP& private(Maximum_Outer,LocalConst,Relative_Stop,Divergence_Stop, &
-!$OMP&   Cosinus,Sinus,aconst,bconst,I,J,K,Outer,Inner)
+!$OMP&   aconst,bconst,I,J,K,Outer,Inner)
 
 ! Grab the value from the structure
 Maximum_Outer = User_Krylov%Maximum_Iterations/User_Krylov%BackVectors
@@ -73,10 +77,10 @@ IF (Maximum_Outer*User_Krylov%BackVectors .NE. User_Krylov%Maximum_Iterations) M
 #ifdef Local_Debug_FGMRES_Driver
    WRITE(Output_Unit,*)'NumThreads = ',NumThreads
 !$OMP SINGLE
-      WRITE(Output_Unit,'("[GMRES]...Initial guess ",I9)') User_Krylov%Local_Owned
-      DO I = 1,User_Krylov%Local_Owned
-         WRITE(Output_Unit,'("[GMRES]...solution(",I4,") = ",1PE13.6," RHS=",1PE13.6)') I, Solution(I),RightHandSide(I)
-      END DO
+   WRITE(Output_Unit,'("[GMRES]...Initial guess ",I9)') User_Krylov%Local_Owned
+   DO I = 1,User_Krylov%Local_Owned
+      WRITE(Output_Unit,'("[GMRES]...solution(",I4,") = ",1PE13.6," RHS=",1PE13.6)') I, Solution(I),RightHandSide(I)
+   END DO
 !$OMP END SINGLE
 #endif
 
@@ -114,10 +118,10 @@ END IF
 
 #ifdef Local_Debug_FGMRES_Driver
 !$OMP SINGLE
-      WRITE(Output_Unit,'("[GMRES]...Initial residual")')
-      DO I = 1,User_Krylov%Local_Owned
-         WRITE(Output_Unit,'("[GMRES]...Basis(",I4,") = ",1PE13.6)') I, User_Krylov%Basis(I,1)
-      END DO
+   WRITE(Output_Unit,'("[GMRES]...Initial residual")')
+   DO I = 1,User_Krylov%Local_Owned
+      WRITE(Output_Unit,'("[GMRES]...Basis(",I4,") = ",1PE13.6)') I, User_Krylov%Basis(I,1)
+   END DO
 !$OMP END SINGLE
 #endif
 
@@ -144,12 +148,12 @@ Divergence_Stop = ResidualNorm *(1.0d0 + User_Krylov%Divergence_Tolerance)
 
 #ifdef Local_Debug_FGMRES_Driver
 !$OMP SINGLE
-      WRITE(Output_Unit,'("[GMRES]...Max Outer        = ",I14)') Maximum_Outer
-      WRITE(Output_Unit,'("[GMRES]...Max Inner        = ",I14)') User_Krylov%BackVectors
-      WRITE(Output_Unit,'("[GMRES]...Total Max Iter   = ",I14)') User_Krylov%Maximum_Iterations
-      WRITE(Output_Unit,'("[GMRES]...Absolute target  = ",1PE13.6)') User_Krylov%Absolute_Tolerance
-      WRITE(Output_Unit,'("[GMRES]...Relative target  = ",1PE13.6)') Relative_Stop
-      WRITE(Output_Unit,'("[GMRES]...Divergence Stop  = ",1PE13.6)') Divergence_Stop
+   WRITE(Output_Unit,'("[GMRES]...Max Outer        = ",I14)') Maximum_Outer
+   WRITE(Output_Unit,'("[GMRES]...Max Inner        = ",I14)') User_Krylov%BackVectors
+   WRITE(Output_Unit,'("[GMRES]...Total Max Iter   = ",I14)') User_Krylov%Maximum_Iterations
+   WRITE(Output_Unit,'("[GMRES]...Absolute target  = ",1PE13.6)') User_Krylov%Absolute_Tolerance
+   WRITE(Output_Unit,'("[GMRES]...Relative target  = ",1PE13.6)') Relative_Stop
+   WRITE(Output_Unit,'("[GMRES]...Divergence Stop  = ",1PE13.6)') Divergence_Stop
 !$OMP END SINGLE
 #endif
 
@@ -158,15 +162,15 @@ IF (ResidualNorm .EQ. 0.0d0) GOTO 1000 ! Yes, there is nothing to do because we 
 DO Outer = 1, Maximum_Outer
 ! It might be possible to workshare this in parallel...
 !$OMP SINGLE
-      DO J = 1,User_Krylov%BackVectors+1
-         DO I = 1,User_Krylov%BackVectors
-            User_Krylov%Hessenberg(I,J) = 0.0d0
-         END DO
+   DO J = 1,User_Krylov%BackVectors+1
+      DO I = 1,User_Krylov%BackVectors
+         User_Krylov%Hessenberg(I,J) = 0.0d0
       END DO
-      DO J = 1,User_Krylov%BackVectors
-         User_Krylov%Modified_RHS(J) = 0.0d0
-      END DO
-      User_Krylov%Modified_RHS(1) = ResidualNorm ! No barrier is needed for this as I assume we need one just before and after Apply_PC and Apply_A
+   END DO
+   DO J = 1,User_Krylov%BackVectors
+      User_Krylov%Modified_RHS(J) = 0.0d0
+   END DO
+   User_Krylov%Modified_RHS(1) = ResidualNorm ! No barrier is needed for this as I assume we need one just before and after Apply_PC and Apply_A
 !$OMP END SINGLE
 
    ! For the initialization the Residual is in Basis(*,1) and its norm in ResidualNorm    
@@ -189,49 +193,49 @@ DO Outer = 1, Maximum_Outer
       CALL Apply_PC(User_Krylov%Basis(1,Inner),User_Krylov%PC_Basis(1,Inner))
 #ifdef Local_Debug_FGMRES_Driver
 !$OMP SINGLE
-         WRITE(Output_Unit,'("[GMRES]...At Outer ",I4," and Inner ",I4," some vectors:")') Outer,Inner
-         DO I = 1, User_Krylov%Local_Owned
-            WRITE(Output_Unit,'("[GMRES]...residual/norm=V(",I4,") = ",1PE13.6," PC*V(",I4,") = ",1PE13.6)') &
-                 I, User_Krylov%Basis(I,Inner),I,User_Krylov%PC_Basis(I,Inner)
-         END DO
+      WRITE(Output_Unit,'("[GMRES]...At Outer ",I4," and Inner ",I4," some vectors:")') Outer,Inner
+      DO I = 1, User_Krylov%Local_Owned
+         WRITE(Output_Unit,'("[GMRES]...residual/norm=V(",I4,") = ",1PE13.6," PC*V(",I4,") = ",1PE13.6)') &
+              I, User_Krylov%Basis(I,Inner),I,User_Krylov%PC_Basis(I,Inner)
+      END DO
 !$OMP END SINGLE
 #endif
       ! Apply A to the intermediate vector and store it in the next basis point before orthonormalization
       CALL Apply_A(User_Krylov%PC_Basis(1,Inner),User_Krylov%Basis(1,Inner+1))
 #ifdef Local_Debug_FGMRES_Driver
 !$OMP SINGLE
-         WRITE(Output_Unit,'("[GMRES]...At Outer ",I4," and Inner ",I4," intermediate vectors:")') Outer,Inner
-         DO I = 1, User_Krylov%Local_Owned
-            WRITE(Output_Unit,'("[GMRES]...A*Z=V(",I4,") = ",1PE13.6)') I, User_Krylov%Basis(I,Inner+1)
-         END DO
+      WRITE(Output_Unit,'("[GMRES]...At Outer ",I4," and Inner ",I4," intermediate vectors:")') Outer,Inner
+      DO I = 1, User_Krylov%Local_Owned
+         WRITE(Output_Unit,'("[GMRES]...A*Z=V(",I4,") = ",1PE13.6)') I, User_Krylov%Basis(I,Inner+1)
+      END DO
 !$OMP END SINGLE
 #endif
 
 !$OMP SINGLE
-HessenNorm_Shared = 0.0d0
+      HessenNorm_Shared = 0.0d0
 !$OMP END SINGLE
 
 !$OMP DO REDUCTION(+:HessenNorm_Shared)
-   DO J=1, NumVertices*NumAngles
-      DO I=1, Inner
-         HessenNorm_Shared(I) = HessenNorm_Shared(I) +User_Krylov%Basis(J,Inner+1)*User_Krylov%Basis(J,I)
+      DO J=1, NumVertices*NumAngles
+         DO I=1, Inner
+            HessenNorm_Shared(I) = HessenNorm_Shared(I) +User_Krylov%Basis(J,Inner+1)*User_Krylov%Basis(J,I)
+         END DO
       END DO
-   END DO
 !$OMP END DO
 
 !$OMP SINGLE
-   DO I = 1, Inner
+      DO I = 1, Inner
 #ifdef USEMPI
          User_Krylov%Hessenberg(I,User_Krylov%BackVectors+1) = HessenNorm_Shared(I)
 #else
          User_Krylov%Hessenberg(I,Inner) = HessenNorm_Shared(I)
 #endif
-   END DO
+      END DO
 #ifdef USEMPI
-         ! Reduce the dot product on the whole communicator space
-         CALL MPI_ALLREDUCE(User_Krylov%Hessenberg(1,User_Krylov%BackVectors+1),User_Krylov%Hessenberg(1,Inner),  &
-                            User_Krylov%Local_Owned,MPI_DOUBLE_PRECISION,MPI_SUM,ParallelComm,J)
-         CALL Basic_CheckError(Output_Unit,J,'MPI_ALLREDUCE Hessenberg_Column in (Basic_FillHessenberg)')
+      ! Reduce the dot product on the whole communicator space
+      CALL MPI_ALLREDUCE(User_Krylov%Hessenberg(1,User_Krylov%BackVectors+1),User_Krylov%Hessenberg(1,Inner),  &
+                         User_Krylov%Local_Owned,MPI_DOUBLE_PRECISION,MPI_SUM,ParallelComm,J)
+      CALL Basic_CheckError(Output_Unit,J,'MPI_ALLREDUCE Hessenberg_Column in (Basic_FillHessenberg)')
 #endif
 !$OMP END SINGLE
 
@@ -239,10 +243,10 @@ HessenNorm_Shared = 0.0d0
 
 #ifdef Local_Debug_FGMRES_Driver
 !$OMP SINGLE
-         WRITE(Output_Unit,'("[GMRES]...Hessenberg matrix K=",I3)') 
-         DO I = 1,Inner
-            WRITE(Output_Unit,'("[GMRES]...Hessenberg(",I3,") = ",100(1PE13.6,1X))') I, (User_Krylov%Hessenberg(I,J),J=1,Inner)
-         END DO
+      WRITE(Output_Unit,'("[GMRES]...Hessenberg matrix K=",I3)') 
+      DO I = 1,Inner
+         WRITE(Output_Unit,'("[GMRES]...Hessenberg(",I3,") = ",100(1PE13.6,1X))') I, (User_Krylov%Hessenberg(I,J),J=1,Inner)
+      END DO
 !$OMP END SINGLE
 #endif
       ! Compute an new orthogonal vector
@@ -267,70 +271,70 @@ HessenNorm_Shared = 0.0d0
 
 !$OMP SINGLE
 #ifdef USEMPI
-         LocalConst = VectorNorm
-         CALL MPI_ALLREDUCE(LocalConst,VectorNorm,1,MPI_DOUBLE_PRECISION,MPI_SUM,ParallelComm,J)
-         CALL Basic_CheckError(Output_Unit,J,"MPI_ALLREDUCE for ResidualNorm in (Method_FGMRES)")
+      LocalConst = VectorNorm
+      CALL MPI_ALLREDUCE(LocalConst,VectorNorm,1,MPI_DOUBLE_PRECISION,MPI_SUM,ParallelComm,J)
+      CALL Basic_CheckError(Output_Unit,J,"MPI_ALLREDUCE for ResidualNorm in (Method_FGMRES)")
 #endif
-         VectorNorm = DSQRT(VectorNorm)
-         User_Krylov%Hessenberg(Inner+1,Inner) = VectorNorm
-         IF (VectorNorm .EQ. 0.0d0) THEN
-            ResidualNorm = VectorNorm ! This was moved from below and the check by all below will cause an exit
-         ELSE
-            VectorNorm = 1.0d0 / VectorNorm
-            ! An efficient way to compute the norm of the residual is to use a QR decomposition of the Hessenberg matrix
-            ! We also solve the minimization problem
-            ! Apply previous rotation to the last column of Hessenberg
-            DO I = 1,Inner-1,1
-               aconst  = User_Krylov%Hessenberg(I,Inner)
-               bconst  = User_Krylov%Hessenberg(I+1,Inner) ! We cannot remove this because of the redefinition in the next two lines
-               User_Krylov%Hessenberg(I,Inner)   = User_Krylov%Givens(I,1)*aconst - User_Krylov%Givens(I,2)*bconst
-               User_Krylov%Hessenberg(I+1,Inner) = User_Krylov%Givens(I,2)*aconst + User_Krylov%Givens(I,1)*bconst
-            END DO
-            ! Compute the givens coefficients for this iteration
-            ResidualNorm = User_Krylov%Hessenberg(Inner,Inner)
-            LocalConst = User_Krylov%Hessenberg(Inner+1,Inner)
-            ResidualNorm = DSQRT(ResidualNorm*ResidualNorm + LocalConst*LocalConst)
-            LocalConst = 1.0d0 / ResidualNorm
-            User_Krylov%Givens(Inner,1) =  User_Krylov%Hessenberg(Inner,Inner)   * LocalConst
-            User_Krylov%Givens(Inner,2) = -User_Krylov%Hessenberg(Inner+1,Inner) * LocalConst
-   
-            ! Apply this rotation to the Hessenberg matrix and to the modified right hand side
-            aconst  = User_Krylov%Hessenberg(Inner,Inner)
-            bconst  = User_Krylov%Hessenberg(Inner+1,Inner) ! We cannot remove this because of the redefinition in the next two lines
-            User_Krylov%Hessenberg(Inner,Inner)   = User_Krylov%Givens(Inner,1)*aconst - User_Krylov%Givens(Inner,2)*bconst
-            User_Krylov%Hessenberg(Inner+1,Inner) = User_Krylov%Givens(Inner,2)*aconst + User_Krylov%Givens(Inner,1)*bconst
-            aconst  = User_Krylov%Modified_RHS(Inner)
-            bconst  = User_Krylov%Modified_RHS(Inner+1) ! We cannot remove this because of the redefinition in the next two lines
-            User_Krylov%Modified_RHS(Inner)   = User_Krylov%Givens(Inner,1)*aconst - User_Krylov%Givens(Inner,2)*bconst
-            User_Krylov%Modified_RHS(Inner+1) = User_Krylov%Givens(Inner,2)*aconst + User_Krylov%Givens(Inner,1)*bconst
-            ! Now we have the residual norm at no extra cost
-            ResidualNorm = DABS(User_Krylov%Modified_RHS(Inner+1))
-            ! update the number of iteration before exit
-            IterationCount         = IterationCount + 1
-            User_Krylov%Iterations = User_Krylov%Iterations + 1
-         END IF ! Vector norm = 0
+      VectorNorm = DSQRT(VectorNorm)
+      User_Krylov%Hessenberg(Inner+1,Inner) = VectorNorm
+      IF (VectorNorm .EQ. 0.0d0) THEN
+         ResidualNorm = VectorNorm ! This was moved from below and the check by all below will cause an exit
+      ELSE
+         VectorNorm = 1.0d0 / VectorNorm
+         ! An efficient way to compute the norm of the residual is to use a QR decomposition of the Hessenberg matrix
+         ! We also solve the minimization problem
+         ! Apply previous rotation to the last column of Hessenberg
+         DO I = 1,Inner-1,1
+            aconst  = User_Krylov%Hessenberg(I,Inner)
+            bconst  = User_Krylov%Hessenberg(I+1,Inner) ! We cannot remove this because of the redefinition in the next two lines
+            User_Krylov%Hessenberg(I,Inner)   = User_Krylov%Givens(I,1)*aconst - User_Krylov%Givens(I,2)*bconst
+            User_Krylov%Hessenberg(I+1,Inner) = User_Krylov%Givens(I,2)*aconst + User_Krylov%Givens(I,1)*bconst
+         END DO
+         ! Compute the givens coefficients for this iteration
+         ResidualNorm = User_Krylov%Hessenberg(Inner,Inner)
+         LocalConst = User_Krylov%Hessenberg(Inner+1,Inner)
+         ResidualNorm = DSQRT(ResidualNorm*ResidualNorm + LocalConst*LocalConst)
+         LocalConst = 1.0d0 / ResidualNorm
+         User_Krylov%Givens(Inner,1) =  User_Krylov%Hessenberg(Inner,Inner)   * LocalConst
+         User_Krylov%Givens(Inner,2) = -User_Krylov%Hessenberg(Inner+1,Inner) * LocalConst
+
+         ! Apply this rotation to the Hessenberg matrix and to the modified right hand side
+         aconst  = User_Krylov%Hessenberg(Inner,Inner)
+         bconst  = User_Krylov%Hessenberg(Inner+1,Inner) ! We cannot remove this because of the redefinition in the next two lines
+         User_Krylov%Hessenberg(Inner,Inner)   = User_Krylov%Givens(Inner,1)*aconst - User_Krylov%Givens(Inner,2)*bconst
+         User_Krylov%Hessenberg(Inner+1,Inner) = User_Krylov%Givens(Inner,2)*aconst + User_Krylov%Givens(Inner,1)*bconst
+         aconst  = User_Krylov%Modified_RHS(Inner)
+         bconst  = User_Krylov%Modified_RHS(Inner+1) ! We cannot remove this because of the redefinition in the next two lines
+         User_Krylov%Modified_RHS(Inner)   = User_Krylov%Givens(Inner,1)*aconst - User_Krylov%Givens(Inner,2)*bconst
+         User_Krylov%Modified_RHS(Inner+1) = User_Krylov%Givens(Inner,2)*aconst + User_Krylov%Givens(Inner,1)*bconst
+         ! Now we have the residual norm at no extra cost
+         ResidualNorm = DABS(User_Krylov%Modified_RHS(Inner+1))
+         ! update the number of iteration before exit
+         IterationCount         = IterationCount + 1
+         User_Krylov%Iterations = User_Krylov%Iterations + 1
+      END IF ! Vector norm = 0
 !$OMP END SINGLE
 
 #ifdef Local_Debug_FGMRES_Driver
 !$OMP SINGLE
-         WRITE(Output_Unit,'("[GMRES]...VectorNorm=",1PE13.6)') VectorNorm
-         DO I = 1, User_Krylov%Local_Owned
-            WRITE(Output_Unit,'("[GMRES]...New XX(",I4,") = ",1PE13.6)') I, User_Krylov%Basis(I,Inner+1) * VectorNorm
-         END DO
-         DO I = 1,Inner+1
-            WRITE(Output_Unit,'("[GMRES]...Updated Hessenberg(",I3,") = ",100(1PE13.6,1X))') I, (User_Krylov%Hessenberg(I,J),J=1,Inner)
-         END DO
-         DO I = 1,Inner+1
-            WRITE(Output_Unit,'("[GMRES]...Rotated Hessenberg(",I3,") = ",100(1PE13.6,1X))') I, (User_Krylov%Hessenberg(I,J),J=1,Inner)
-         END DO
-         DO I = 1,Inner
-            WRITE(Output_Unit,'("[GMRES]...Givens(",I3,") = ",100(1PE13.6,1X))') I,User_Krylov%Givens(I,1),User_Krylov%Givens(I,2)
-         END DO
-   
-         DO I = 1,Inner+1
-            WRITE(Output_Unit,'("[GMRES]......RHS(",I4,") = ",1PE13.6)') I,User_Krylov%Modified_RHS(I)
-         END DO
-         WRITE(Output_Unit,'("[GMRES]...At Outer ",I4," and Inner ",I4," residual = ",1PE13.6)') Outer,Inner,ResidualNorm
+      WRITE(Output_Unit,'("[GMRES]...VectorNorm=",1PE13.6)') VectorNorm
+      DO I = 1, User_Krylov%Local_Owned
+         WRITE(Output_Unit,'("[GMRES]...New XX(",I4,") = ",1PE13.6)') I, User_Krylov%Basis(I,Inner+1) * VectorNorm
+      END DO
+      DO I = 1,Inner+1
+         WRITE(Output_Unit,'("[GMRES]...Updated Hessenberg(",I3,") = ",100(1PE13.6,1X))') I, (User_Krylov%Hessenberg(I,J),J=1,Inner)
+      END DO
+      DO I = 1,Inner+1
+         WRITE(Output_Unit,'("[GMRES]...Rotated Hessenberg(",I3,") = ",100(1PE13.6,1X))') I, (User_Krylov%Hessenberg(I,J),J=1,Inner)
+      END DO
+      DO I = 1,Inner
+         WRITE(Output_Unit,'("[GMRES]...Givens(",I3,") = ",100(1PE13.6,1X))') I,User_Krylov%Givens(I,1),User_Krylov%Givens(I,2)
+      END DO
+
+      DO I = 1,Inner+1
+         WRITE(Output_Unit,'("[GMRES]......RHS(",I4,") = ",1PE13.6)') I,User_Krylov%Modified_RHS(I)
+      END DO
+      WRITE(Output_Unit,'("[GMRES]...At Outer ",I4," and Inner ",I4," residual = ",1PE13.6)') Outer,Inner,ResidualNorm
 !$OMP END SINGLE
 #endif
       ! if Vector Norm == 0, we reach the happy break down.
@@ -368,7 +372,7 @@ HessenNorm_Shared = 0.0d0
    ! We only need to compute h(i,m) = (A*vm, vi)
 #ifdef Local_Debug_FGMRES_Driver
 !$OMP SINGLE
-      WRITE(Output_Unit,'("[GMRES]...Exit inner loop with inner = ",I4)') Inner
+   WRITE(Output_Unit,'("[GMRES]...Exit inner loop with inner = ",I4)') Inner
 !$OMP END SINGLE
 #endif
    IF (ResidualNorm .GT. Divergence_Stop) THEN
@@ -380,22 +384,22 @@ HessenNorm_Shared = 0.0d0
    ! R is an upper triangular matrix, the modified Hessenberg matrix
 ! OMP BARRIER  ! This barrier is not needed as both instances of exiting out of the inner loop will have consistent data
 !$OMP SINGLE
-      DO I = Inner, 1, -1
-         DO J = I+1,Inner
-            User_Krylov%Modified_RHS(I) = User_Krylov%Modified_RHS(I) - User_Krylov%Hessenberg(I,J)*User_Krylov%Modified_RHS(J)
-         END DO
-         User_Krylov%Modified_RHS(I) = User_Krylov%Modified_RHS(I) / User_Krylov%Hessenberg(I,I) ! This cannot be moved
+   DO I = Inner, 1, -1
+      DO J = I+1,Inner
+         User_Krylov%Modified_RHS(I) = User_Krylov%Modified_RHS(I) - User_Krylov%Hessenberg(I,J)*User_Krylov%Modified_RHS(J)
       END DO
+      User_Krylov%Modified_RHS(I) = User_Krylov%Modified_RHS(I) / User_Krylov%Hessenberg(I,I) ! This cannot be moved
+   END DO
 #ifdef Local_Debug_FGMRES_Driver
-      DO I = 1,User_Krylov%Local_Owned
-         WRITE(Output_Unit,'("[GMRES]...Exiting PC Basis(",I3,") = ",100(1PE13.6,1X))') I, (User_Krylov%PC_Basis(I,J),J=1,Inner)
-      END DO
-      DO I = 1,User_Krylov%Local_Owned
-         WRITE(Output_Unit,'("[GMRES]...Exiting Basis(",I3,") = ",100(1PE13.6,1X))') I, (User_Krylov%Basis(I,J),J=1,Inner+1)
-      END DO
-      DO I = 1,Inner+1
-         WRITE(Output_Unit,'("[GMRES]...Exiting RHS(",I4,") = ",1PE13.6)') I,User_Krylov%Modified_RHS(I)
-      END DO
+   DO I = 1,User_Krylov%Local_Owned
+      WRITE(Output_Unit,'("[GMRES]...Exiting PC Basis(",I3,") = ",100(1PE13.6,1X))') I, (User_Krylov%PC_Basis(I,J),J=1,Inner)
+   END DO
+   DO I = 1,User_Krylov%Local_Owned
+      WRITE(Output_Unit,'("[GMRES]...Exiting Basis(",I3,") = ",100(1PE13.6,1X))') I, (User_Krylov%Basis(I,J),J=1,Inner+1)
+   END DO
+   DO I = 1,Inner+1
+      WRITE(Output_Unit,'("[GMRES]...Exiting RHS(",I4,") = ",1PE13.6)') I,User_Krylov%Modified_RHS(I)
+   END DO
 #endif
 !$OMP END SINGLE
 
@@ -411,10 +415,10 @@ HessenNorm_Shared = 0.0d0
 
 #ifdef Local_Debug_FGMRES_Driver
 !$OMP SINGLE
-      WRITE(Output_Unit,'("[GMRES]...Solution after outer iteration ",I4)') Outer
-      DO I = 1,User_Krylov%Local_Owned
-         WRITE(Output_Unit,'("[GMRES]...X(",I4,") = " 1PE13.6)') I,Solution(I)
-      END DO
+   WRITE(Output_Unit,'("[GMRES]...Solution after outer iteration ",I4)') Outer
+   DO I = 1,User_Krylov%Local_Owned
+      WRITE(Output_Unit,'("[GMRES]...X(",I4,") = " 1PE13.6)') I,Solution(I)
+   END DO
 !$OMP END SINGLE
 #endif
 
@@ -442,11 +446,11 @@ HessenNorm_Shared = 0.0d0
 
 !$OMP SINGLE
 #ifdef USEMPI
-      LocalConst = ResidualNorm
-      CALL MPI_ALLREDUCE(LocalConst,VectorNorm,1,MPI_DOUBLE_PRECISION,MPI_SUM,ParallelComm,J)
-      CALL Basic_CheckError(Output_Unit,J,"MPI_ALLREDUCE for ResidualNorm in (Method_FGMRES)")
+   LocalConst = ResidualNorm
+   CALL MPI_ALLREDUCE(LocalConst,VectorNorm,1,MPI_DOUBLE_PRECISION,MPI_SUM,ParallelComm,J)
+   CALL Basic_CheckError(Output_Unit,J,"MPI_ALLREDUCE for ResidualNorm in (Method_FGMRES)")
 #endif
-      ResidualNorm = DSQRT(ResidualNorm)
+   ResidualNorm = DSQRT(ResidualNorm)
 !$OMP END SINGLE
 
 #ifdef Local_Debug_FGMRES_Driver
@@ -454,26 +458,26 @@ HessenNorm_Shared = 0.0d0
    WRITE(Output_Unit,'("[GMRES]...At FinalCheck residual = ",1PE13.6)') ResidualNorm
 !$OMP END SINGLE
 #endif
-       ! Test if the ResidualNorm meet the stopping criterion
-    IF (ResidualNorm .LE. 0.0D0) THEN ! Happy breakdown convergence
-       ReasonForConvergence = 5 ! KSP_CONVERGED_BREAKDOWN
-       EXIT
-    ELSE IF (ResidualNorm .LT. User_Krylov%Absolute_Tolerance) THEN
-       ReasonForConvergence = 3 ! KSP_CONVERGED_ATOL 
-       EXIT
-    ELSE IF (ResidualNorm .LT. Relative_Stop) THEN
-       ReasonForConvergence = 2 ! KSP_CONVERGED_RTOL
-       EXIT
-    ELSE IF (IterationCount .GE. User_Krylov%Maximum_Iterations) THEN
-       ReasonForConvergence = 1 ! KSP_HIT_ITERATION_LIMIT
-       EXIT
-    ELSE
+   ! Test if the ResidualNorm meet the stopping criterion
+   IF (ResidualNorm .LE. 0.0D0) THEN ! Happy breakdown convergence
+      ReasonForConvergence = 5 ! KSP_CONVERGED_BREAKDOWN
+      EXIT
+   ELSE IF (ResidualNorm .LT. User_Krylov%Absolute_Tolerance) THEN
+      ReasonForConvergence = 3 ! KSP_CONVERGED_ATOL 
+      EXIT
+   ELSE IF (ResidualNorm .LT. Relative_Stop) THEN
+      ReasonForConvergence = 2 ! KSP_CONVERGED_RTOL
+      EXIT
+   ELSE IF (IterationCount .GE. User_Krylov%Maximum_Iterations) THEN
+      ReasonForConvergence = 1 ! KSP_HIT_ITERATION_LIMIT
+      EXIT
+   ELSE
       IF (ParallelRank .EQ. 0) THEN
 !$OMP SINGLE
          WRITE(Output_Unit,'("[SN-KERNEL]...Outer ",I6," after ",I6," inners has residual = ",1PE13.6)') Outer,Inner,ResidualNorm
 !$OMP END SINGLE
       END IF
-    END IF
+   END IF
 END DO ! Outer
 
 1000 CONTINUE
