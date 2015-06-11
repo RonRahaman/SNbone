@@ -47,6 +47,7 @@ PROTEUS_Int  IterationCount             ! Count the total number of inner iterat
 PROTEUS_Real ResidualNorm,VectorNorm      ! Norm of the residual that is returned (a shared variable between the threads)
 PROTEUS_Real VectorNorm_Local(NumThreads) ! An array used to store threadwise copies of the vector sum
 PROTEUS_Real HessenNorm_Local(NumThreads,User_Krylov%BackVectors)
+PROTEUS_Real HessenNorm_Shared(User_Krylov%BackVectors)
 ! Subroutines that are called
 EXTERNAL  Apply_A                       ! The subroutine which applies the A matrix
 EXTERNAL  Apply_PC                      ! The subroutine which applies the preconditioner
@@ -63,7 +64,8 @@ PROTEUS_Int  MyThreadID, MyStart, MyEnd   ! Also private
 !$OMP& shared(NumVertices, NumAngles, User_Krylov, Solution, RightHandSide, &
 !$OMP&   NumThreads, GuessIsNonZero, &
 !$OMP&   ReasonForConvergence, IterationCount, ParallelComm, ParallelRank, &
-!$OMP&   ResidualNorm, VectorNorm, VectorNorm_Local, HessenNorm_Local) &
+!$OMP&   ResidualNorm, VectorNorm, VectorNorm_Local, HessenNorm_Local, &
+!$OMP&   HessenNorm_Shared) &
 !$OMP& private(Maximum_Outer,LocalConst,Relative_Stop,Divergence_Stop, &
 !$OMP&   Cosinus,Sinus,aconst,bconst,I,J,K,Outer,Inner,MyThreadID,MyStart,MyEnd)
 
@@ -87,7 +89,6 @@ Maximum_Outer = User_Krylov%Maximum_Iterations/User_Krylov%BackVectors
 IF (Maximum_Outer*User_Krylov%BackVectors .NE. User_Krylov%Maximum_Iterations) Maximum_Outer = Maximum_Outer + 1
 
 #ifdef Local_Debug_FGMRES_Driver
-   WRITE(Output_Unit,*)'MyThreadID = ',MyThreadID
    WRITE(Output_Unit,*)'NumThreads = ',NumThreads
 !$OMP SINGLE
       WRITE(Output_Unit,'("[GMRES]...Initial guess ",I9)') User_Krylov%Local_Owned
@@ -144,14 +145,6 @@ IterationCount = 0
 ResidualNorm = 0.0d0
 !$OMP END SINGLE
 
-! !$OMP DO REDUCTION(+:ResidualNorm)
-! DO I = 1, NumThreads
-!    DO J = MyStart,MyEnd
-!       ResidualNorm = ResidualNorm + User_Krylov%Basis(J,1) * User_Krylov%Basis(J,1)
-!    END DO
-! END DO
-! !$OMP END DO
-
 !$OMP DO REDUCTION(+:ResidualNorm)
 DO I = 1, NumVertices*NumAngles
    ResidualNorm = ResidualNorm + User_Krylov%Basis(I,1) * User_Krylov%Basis(I,1)
@@ -162,13 +155,12 @@ END DO
 ResidualNorm = DSQRT(ResidualNorm)
 !$OMP END SINGLE
 
-
 !Setup the relative tolerance limit
 Relative_Stop = ResidualNorm * User_Krylov%Relative_Tolerance 
 ! Setup the divergence tolerance limit
 Divergence_Stop = ResidualNorm *(1.0d0 + User_Krylov%Divergence_Tolerance)
 
-!#ifdef Local_Debug_FGMRES_Driver
+#ifdef Local_Debug_FGMRES_Driver
 !$OMP SINGLE
       WRITE(Output_Unit,'("[GMRES]...Max Outer        = ",I14)') Maximum_Outer
       WRITE(Output_Unit,'("[GMRES]...Max Inner        = ",I14)') User_Krylov%BackVectors
@@ -177,7 +169,7 @@ Divergence_Stop = ResidualNorm *(1.0d0 + User_Krylov%Divergence_Tolerance)
       WRITE(Output_Unit,'("[GMRES]...Relative target  = ",1PE13.6)') Relative_Stop
       WRITE(Output_Unit,'("[GMRES]...Divergence Stop  = ",1PE13.6)') Divergence_Stop
 !$OMP END SINGLE
-!#endif
+#endif
 
 IF (ResidualNorm .EQ. 0.0d0) GOTO 1000 ! Yes, there is nothing to do because we have the exact answer
 
@@ -232,25 +224,27 @@ DO Outer = 1, Maximum_Outer
          END DO
 !$OMP END SINGLE
 #endif
-      ! We need to reduce on Hessenberg(:,K) across all threads
-      DO I = 1, Inner
-         HessenNorm_Local(MyThreadID,I) = 0.0d0
-!$OMP DO
-         DO J = 1, NumVertices*NumAngles
-            HessenNorm_Local(MyThreadID,I) = HessenNorm_Local(MyThreadID,I) + User_Krylov%Basis(J,Inner+1)*User_Krylov%Basis(J,I)
-         END DO
-!$OMP END DO
-      END DO
 
 !$OMP SINGLE
-         DO I = 1,Inner
-            LocalConst = sum(HessenNorm_Local(:,I))
+HessenNorm_Shared = 0.0d0
+!$OMP END SINGLE
+
+!$OMP DO REDUCTION(+:HessenNorm_Shared)
+   DO J=1, NumVertices*NumAngles
+      DO I=1, Inner
+         HessenNorm_Shared(I) = HessenNorm_Shared(I) +User_Krylov%Basis(J,Inner+1)*User_Krylov%Basis(J,I)
+      END DO
+   END DO
+!$OMP END DO
+
+!$OMP SINGLE
+   DO I = 1, Inner
 #ifdef USEMPI
-            User_Krylov%Hessenberg(I,User_Krylov%BackVectors+1) = LocalConst
+         User_Krylov%Hessenberg(I,User_Krylov%BackVectors+1) = HessenNorm_Shared(I)
 #else
-            User_Krylov%Hessenberg(I,Inner) = LocalConst
+         User_Krylov%Hessenberg(I,Inner) = HessenNorm_Shared(I)
 #endif
-         END DO
+   END DO
 #ifdef USEMPI
          ! Reduce the dot product on the whole communicator space
          CALL MPI_ALLREDUCE(User_Krylov%Hessenberg(1,User_Krylov%BackVectors+1),User_Krylov%Hessenberg(1,Inner),  &
@@ -258,6 +252,8 @@ DO Outer = 1, Maximum_Outer
          CALL Basic_CheckError(Output_Unit,J,'MPI_ALLREDUCE Hessenberg_Column in (Basic_FillHessenberg)')
 #endif
 !$OMP END SINGLE
+
+!=====================================================================================================
 
 #ifdef Local_Debug_FGMRES_Driver
 !$OMP SINGLE
