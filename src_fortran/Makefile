@@ -10,12 +10,16 @@ COMPILER=$(shell  \
   if test `dnsdomainname | grep fst`;    then echo bgq; fi; \
   )
 # You can enable or disable OPENMP threading by using "THREAD=no"
+# You can compile for Intel Xeon Phi coprocessor by using "MIC=yes"
 # You can enable or disable the two PAPI options by using PAPIFLOP and PAPISET1. They cannot both be used
 # You can change the optimization settings by using "OPT=2"
+# You can change the verbosity of the optmization reports by using "OPT=3"
 THREAD=yes
+MIC=no
 PAPI=no
 IBMHPM=no
 OPT=3
+OPTREPORT=4
 DEBUG=
 USEMETIS=no
 USEGREEDY=no
@@ -35,9 +39,12 @@ IBMLIB=
 ifeq (${COMPILER}, intel)
    FF     = ifort
    LD     = ${FF}
-   LDFLAGS = -O${OPT} -Bstatic ${DEBUG}
+   LDFLAGS = -O${OPT} -Bstatic ${DEBUG} -xHost -qopt-report=${OPTREPORT} -qopt-report-phase=vec
 ifeq (${THREAD},yes)
-   LDFLAGS = -O${OPT} -openmp -DWITHOMP -Bstatic  ${DEBUG}
+   LDFLAGS = -O${OPT} -openmp -DWITHOMP -Bstatic  ${DEBUG} -xHost -qopt-report=${OPTREPORT} -qopt-report-phase=vec,openmp
+endif
+ifeq (${MIC},yes)
+   LDFLAGS = -O${OPT} -openmp -DWITHOMP -Bstatic  ${DEBUG} -mmic -qopt-report=${OPTREPORT} -qopt-report-phase=vec,openmp
 endif
 ifeq (${PAPI},yes)
    PAPIINC= -I/software/papi-5.1.1/O-intel-12.1/include
