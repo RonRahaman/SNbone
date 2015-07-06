@@ -7,6 +7,7 @@ makemesh.x
 processmesh.x
 SNaCFE.x
 cSNaCFE.x
+cuSNaCFE.x
 
 # Optimization reports
 *.optrpt

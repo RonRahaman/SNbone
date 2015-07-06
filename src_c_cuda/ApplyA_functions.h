@@ -1,4 +1,6 @@
 // The various c function headers
+#ifndef APPLYA_FUNCTIONS_H
+#define APPLYA_FUNCTIONS_H
 
 void Verify(int *Output_Unit,int *iSize,double *Guess,double *Answer,char *SomeString,unsigned int Len_MyHPMname);
 void Zero(int *iStart,int *iEnd,int *iSize,double *VectorToInitialize);
@@ -43,3 +45,6 @@ void SolveWGS_PassThrough_AVE3_NoHPM(double *RHS_C, double *LHS_C);
 void SolveWGS_PassThrough_PC(double *RHS_C, double *LHS_C);
 
 void AssembleNZmatrix(int *Input_Scheme);
+
+void CommonBlock();
+#endif
