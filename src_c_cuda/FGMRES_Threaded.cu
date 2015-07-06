@@ -76,9 +76,6 @@ void FGMRES_Threaded(int *Output_Unit,
   int *NumThreads,int *GuessIsNonZero,int *ReasonForConvergence,int *IterationCount,int *ParallelComm,int *ParallelRank,
   double *ResidualNorm,double *VectorNorm,double *VectorNorm_Local,double *HessenNorm_Local,
   int *iMethod) {
-#ifdef USEMPI
-#include "mpif.h"
-#endif
 //#define Local_Debug_FGMRES_Driver
 //INTEGER Output_Unit
 //INTEGER Krylov_Local_Owned       //The number of dof assigned to this processor
@@ -174,11 +171,6 @@ if (*MyThreadID == 1) {
       //printf("[GMRES]...vector norm local %13.6e \n",VectorNorm_Local[I-1]);
       stupidnum = stupidnum + VectorNorm_Local[I-1];
    }
-#ifdef USEMPI
-   LocalConst = stupidnum;
-   CALL MPI_ALLREDUCE(LocalConst,ResidualNorm,1,MPI_DOUBLE_PRECISION,MPI_SUM,ParallelComm,J)
-   CALL Basic_CheckError(Output_Unit,J,"MPI_ALLREDUCE for ResidualNorm in (Method_FGMRES)")
-#endif
    //printf("[GMRES]...before sqrt residual norm %13.6e \n",stupidnum);
 
    *ResidualNorm = sqrt(stupidnum);
@@ -285,18 +277,8 @@ for (Outer = 1;Outer<Maximum_Outer+1;Outer++) {
             for (J = 1;J<*NumThreads+1;J++) {
                LocalConst = LocalConst + HessenNorm_Local[(I-1)* *NumThreads+J-1];
             }
-#ifdef USEMPI
-            Krylov_Hessenberg[K+I-1] = LocalConst;
-#else
             Krylov_Hessenberg[L+I-1] = LocalConst;
-#endif
          }
-#ifdef USEMPI
-         //Reduce the dot product on the whole communicator space
-         CALL MPI_ALLREDUCE(Krylov_Hessenberg(K+1),Krylov_Hessenberg(L+1),  &
-                            *Krylov_Local_Owned,MPI_DOUBLE_PRECISION,MPI_SUM,ParallelComm,J)
-         CALL Basic_CheckError(Output_Unit,J,'MPI_ALLREDUCE Hessenberg_Column in (Basic_FillHessenberg)')
-#endif
       }
 #ifdef WITHOMP
 #pragma omp barrier
@@ -344,11 +326,6 @@ for (Outer = 1;Outer<Maximum_Outer+1;Outer++) {
          for (I = 1;I<*NumThreads+1;I++) {
             *VectorNorm = *VectorNorm + VectorNorm_Local[I-1];
          }
-#ifdef USEMPI
-         LocalConst = *VectorNorm;
-         CALL MPI_ALLREDUCE(LocalConst,VectorNorm,1,MPI_DOUBLE_PRECISION,MPI_SUM,ParallelComm,J)
-         CALL Basic_CheckError(Output_Unit,J,"MPI_ALLREDUCE for ResidualNorm in (Method_FGMRES)")
-#endif
          *VectorNorm = sqrt(*VectorNorm);
          Krylov_Hessenberg[(Inner-1)*BackVectorsp1+Inner+1-1] = *VectorNorm;
          if (*VectorNorm == 0.0) {
@@ -551,11 +528,6 @@ for (Outer = 1;Outer<Maximum_Outer+1;Outer++) {
       for (I = 1;I<*NumThreads+1;I++) {
          stupidnum = stupidnum + VectorNorm_Local[I-1];
       }
-#ifdef USEMPI
-      LocalConst = stupidnum
-      CALL MPI_ALLREDUCE(LocalConst,VectorNorm,1,MPI_DOUBLE_PRECISION,MPI_SUM,ParallelComm,J)
-      CALL Basic_CheckError(Output_Unit,J,"MPI_ALLREDUCE for ResidualNorm in (Method_FGMRES)")
-#endif
       *ResidualNorm = sqrt(stupidnum);
    }
 #ifdef WITHOMP
