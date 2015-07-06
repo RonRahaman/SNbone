@@ -7,6 +7,7 @@
 #include "ApplyA_functions.h"
 #include <stdlib.h>
 #include <stdio.h>
+#include <sys/time.h>
 #ifdef WITHOMP
 #include <omp.h>
 #endif
@@ -202,7 +203,9 @@ double SomeReal;
    SomeReal = omp_get_wtime();
    //printf("[SN-KERNEL] omp time %f \n",SomeReal);
 #else
-   SomeReal = clock();
+   struct timeval tv;
+   gettimeofday(&tv, NULL);
+   SomeReal = (double) tv.tv_sec + (double) tv.tv_usec / 1e6 ;
 #endif
 return SomeReal;
 } // END SUBROUTINE GETTHETIME
