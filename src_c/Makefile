@@ -99,7 +99,7 @@ endif
 
 # ------------------------------
 # Add the PAPI preprocessing stuff
-TARGET = SNaCFE.x
+TARGET = cSNaCFE.x
 ifeq (${PAPI},yes)
    PAPIFLAGS = -DWITHPAPI ${PAPIINC}
    TARGET = SNaCFE_PAPI.x
