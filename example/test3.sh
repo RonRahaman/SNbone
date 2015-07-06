@@ -31,3 +31,7 @@ SNaCFE.x $SCH $ITER $BV $ANG $TH | tee SNaCFE_3.out
 # This tests out the c version
 echo "[BASH] cSNaCFE.x $SCH $ITER $BV $ANG $TH"
 cSNaCFE.x $SCH $ITER $BV $ANG $TH | tee cSNaCFE_3.out
+
+# This tests out the CUDA version
+echo "[BASH] cuSNaCFE.x $SCH $ITER $BV $ANG $TH"
+cuSNaCFE.x $SCH $ITER $BV $ANG $TH | tee cuSNaCFE_3.out
