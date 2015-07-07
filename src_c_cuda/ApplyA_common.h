@@ -79,3 +79,28 @@ EXTERN double *Krylov_Hessenberg;                  // (BackVectors,BackVectors+1
 EXTERN double *Krylov_Givens;                      // (BackVectors,2) Givens rotation (cos,sin) coefficients
 EXTERN double *Krylov_PC_Basis;                    // (Local_Owned,BackVectors) Used by FGMRES to store the preconditionned basis vector
 EXTERN double *Krylov_Modified_RHS;                // (BackVectors) Modified right hand side (used by GMRES and FGMRES) 
+
+// CUDA kernel
+// These are set in CommonBlock to make mallocs, memcopies easier
+EXTERN size_t Sizeof_Krylov_Iterations;
+EXTERN size_t Sizeof_Krylov_Storage_Local;
+EXTERN size_t Sizeof_Krylov_Basis;
+EXTERN size_t Sizeof_Krylov_Hessenberg;
+EXTERN size_t Sizeof_Krylov_Givens;
+EXTERN size_t Sizeof_Krylov_PC_Basis;
+EXTERN size_t Sizeof_Modified_RHS;
+// These will be pointers to device memory
+EXTERN int    *Krylov_Iterations_D;
+EXTERN double *Krylov_Basis_D;
+EXTERN double *Krylov_Hessenberg_D;
+EXTERN double *Krylov_Givens_D;
+EXTERN double *Krylov_PC_Basis_D;
+EXTERN double *Krylov_Modified_RHS_D;
+// EXTERN double *Solution_D;        // declared locally
+// EXTERN double *RHS_D;             // declared locally
+// EXTERN double *ResidualNorm_D     // declared locally
+// EXTERN double *VectorNorm_D       // declared locally
+// EXTERN double *VectorNorm_Local_D // declared locally
+// EXTERN double *HessenNorm_Local_D // declared locally
+
+

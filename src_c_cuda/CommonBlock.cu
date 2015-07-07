@@ -2,6 +2,7 @@
 // This is the main c common block
 #define APPLYA_COMMON
 #include "ApplyA_common.h"
+#include "CudaMacros.h"
 
 // The end target setup..or close to it
 void CommonBlock() {
@@ -60,12 +61,25 @@ Krylov_Iterations          = 0;
 Krylov_Absolute_Tolerance  = 1.0e-12;
 Krylov_Relative_Tolerance  = 1.0e-8;
 Krylov_Divergence_Tolerance = 1.0e-3;
-Krylov_Storage_Local = (double*) malloc(Krylov_Local_Owned*sizeof(double));                              // (Local_Owned)      Locally assigned parallel flux vector
-Krylov_Basis         = (double*) malloc(Krylov_Local_Owned*(Krylov_BackVectors+1)*sizeof(double));       // (Local_Owned,BackVectors) Krylov subspace orthonormal basis vector
-Krylov_Hessenberg    = (double*) malloc((Krylov_BackVectors+1)*(Krylov_BackVectors+1)*sizeof(double));   // (BackVectors,BackVectors+1) Hessenberg matrix coefficients (dot products)
-Krylov_Givens        = (double*) malloc((Krylov_BackVectors+1)*2*sizeof(double));                        // (BackVectors,2) Givens rotation (cos,sin) coefficients
-Krylov_PC_Basis      = (double*) malloc(Krylov_Local_Owned*(Krylov_BackVectors+1)*sizeof(double));       // (Local_Owned,BackVectors) Used by FGMRES to store the preconditionned basis vector
-Krylov_Modified_RHS  = (double*) malloc((Krylov_BackVectors+1)*sizeof(double));                          // (BackVectors) Modified right hand side (used by GMRES and FGMRES) 
+
+Sizeof_Krylov_Iterations    = sizeof(double);
+Sizeof_Krylov_Storage_Local = Krylov_Local_Owned*sizeof(double);
+Sizeof_Krylov_Basis         = Krylov_Local_Owned*(Krylov_BackVectors+1)*sizeof(double);
+Sizeof_Krylov_Hessenberg    = (Krylov_BackVectors+1)*(Krylov_BackVectors+1)*sizeof(double);
+Sizeof_Krylov_Givens        = (Krylov_BackVectors+1)*2*sizeof(double);
+Sizeof_Krylov_PC_Basis      = Krylov_Local_Owned*(Krylov_BackVectors+1)*sizeof(double);
+Sizeof_Modified_RHS         = (Krylov_BackVectors+1)*sizeof(double);
+
+Krylov_Storage_Local = (double*) malloc(Sizeof_Krylov_Storage_Local); // (Local_Owned)      Locally assigned parallel flux vector
+Krylov_Basis         = (double*) malloc(Sizeof_Krylov_Basis);         // (Local_Owned,BackVectors) Krylov subspace orthonormal basis vector
+Krylov_Hessenberg    = (double*) malloc(Sizeof_Krylov_Hessenberg);    // (BackVectors,BackVectors+1) Hessenberg matrix coefficients (dot products)
+Krylov_Givens        = (double*) malloc(Sizeof_Krylov_Givens);        // (BackVectors,2) Givens rotation (cos,sin) coefficients
+Krylov_PC_Basis      = (double*) malloc(Sizeof_Krylov_PC_Basis);       // (Local_Owned,BackVectors) Used by FGMRES to store the preconditionned basis vector
+Krylov_Modified_RHS  = (double*) malloc(Sizeof_Modified_RHS);          // (BackVectors) Modified right hand side (used by GMRES and FGMRES) 
+
+// CUDA kernel
+// CUDA_CALL( cudaMalloc((void **) &Krylov_Iterations_D, sizeof(int)) );
+// CUDA_CALL( cudaMalloc((void **) &Krylov_Basis_D, Krylov_Local_Owned*(Krylov_BackVectors+1)*sizeof(double)
 
 }
 
