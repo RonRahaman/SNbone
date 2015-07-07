@@ -96,11 +96,11 @@ EXTERN double *Krylov_Hessenberg_D;
 EXTERN double *Krylov_Givens_D;
 EXTERN double *Krylov_PC_Basis_D;
 EXTERN double *Krylov_Modified_RHS_D;
-// EXTERN double *Solution_D;        // declared locally
-// EXTERN double *RHS_D;             // declared locally
-// EXTERN double *ResidualNorm_D     // declared locally
-// EXTERN double *VectorNorm_D       // declared locally
-// EXTERN double *VectorNorm_Local_D // declared locally
-// EXTERN double *HessenNorm_Local_D // declared locally
+// EXTERN double *Solution_D;        // declared in Driver
+// EXTERN double *RHS_D;             // declared in Driver
+// EXTERN double *ResidualNorm_D     // declared in SovleWGS
+// EXTERN double *VectorNorm_D       // declared in SolveWGS
+// EXTERN double *VectorNorm_Local_D // declared in SolveWGS
+// EXTERN double *HessenNorm_Local_D // declared in SovleWGS, alias for VectorNorm_Local_D
 
 

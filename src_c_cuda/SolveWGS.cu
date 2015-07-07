@@ -8,6 +8,7 @@
 #ifdef WITHOMP
 #include <omp.h>
 #endif
+#include "CudaMacros.h"
 
 // Fortran interface routines
 void solvewgs(int *Input_Iterations,int *IterationCount,int *iMethod,double *LHS_C,double *RHS_C) {
@@ -26,11 +27,11 @@ int  I,J,I_SizeVec,Output_Unit;
 int  MyThreadID,iStart,iEnd;
 int  ParallelComm,ParallelRank;
 int  GuessIsNonZero;
-int  ReasonForConvergence;       // Divergence (<0), MaxIterationCount (=0), Convergence (>0)
-double ResidualNorm;               // Norm of the residual
+int  ReasonForConvergence;             // Divergence (<0), MaxIterationCount (=0), Convergence (>0)
+double ResidualNorm, *ResidualNorm_D;  // Norm of the residual
 // Additional Threaded stuff
-double VectorNorm;
-double *VectorNorm_Local;
+double VectorNorm,        *VectorNorm_D;
+double *VectorNorm_Local, *VectorNorm_Local_D;
 
 I_SizeVec = NumAngles*NumVertices;
 ParallelRank = 0;
@@ -49,7 +50,13 @@ if (*iMethod == 3) {printf("[SN-KERNEL]...Calling FGMRES solver for AVE3 \n");}
 if (*iMethod == 4) {printf("[SN-KERNEL]...Calling FGMRES solver for AVE4 \n");}
 if (*iMethod == 5) {printf("[SN-KERNEL]...Calling FGMRES solver for AVE5 \n");}
 
+// Host malloc
 VectorNorm_Local = (double*) malloc(NumThreads*Krylov_BackVectors*sizeof(double));
+// Device malloc
+cudaMalloc((void **) &ResidualNorm_D, sizeof(double));
+cudaMalloc((void **) &VectorNorm_D,   sizeof(double));
+cudaMalloc((void **) &VectorNorm_Local_D, NumThreads*Krylov_BackVectors*sizeof(double));
+cudaDeviceSynchronize();
 
 #ifdef WITHOMP
 #pragma omp parallel shared(ResidualNorm,VectorNorm,VectorNorm_Local,Conn,AS_ThreadWiseWork, \
@@ -83,6 +90,9 @@ VectorNorm_Local = (double*) malloc(NumThreads*Krylov_BackVectors*sizeof(double)
    }
 #endif
 free(VectorNorm_Local);
+cudaFree((void *) ResidualNorm_D);
+cudaFree((void *) VectorNorm_D);
+cudaFree((void *) VectorNorm_Local_D);
 
 printf("[SN-KERNEL]...FGMRES returned with an error of %13.6e after %6d iterations \n",ResidualNorm,*IterationCount);
 

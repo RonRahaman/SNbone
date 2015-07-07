@@ -47,4 +47,5 @@ void SolveWGS_PassThrough_PC(double *RHS_C, double *LHS_C);
 void AssembleNZmatrix(int *Input_Scheme);
 
 void CommonBlock();
+void FreeCommonBlock();
 #endif

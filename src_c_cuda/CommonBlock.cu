@@ -62,7 +62,7 @@ Krylov_Absolute_Tolerance  = 1.0e-12;
 Krylov_Relative_Tolerance  = 1.0e-8;
 Krylov_Divergence_Tolerance = 1.0e-3;
 
-Sizeof_Krylov_Iterations    = sizeof(double);
+Sizeof_Krylov_Iterations    = sizeof(int);
 Sizeof_Krylov_Storage_Local = Krylov_Local_Owned*sizeof(double);
 Sizeof_Krylov_Basis         = Krylov_Local_Owned*(Krylov_BackVectors+1)*sizeof(double);
 Sizeof_Krylov_Hessenberg    = (Krylov_BackVectors+1)*(Krylov_BackVectors+1)*sizeof(double);
@@ -78,8 +78,26 @@ Krylov_PC_Basis      = (double*) malloc(Sizeof_Krylov_PC_Basis);       // (Local
 Krylov_Modified_RHS  = (double*) malloc(Sizeof_Modified_RHS);          // (BackVectors) Modified right hand side (used by GMRES and FGMRES) 
 
 // CUDA kernel
-// CUDA_CALL( cudaMalloc((void **) &Krylov_Iterations_D, sizeof(int)) );
-// CUDA_CALL( cudaMalloc((void **) &Krylov_Basis_D, Krylov_Local_Owned*(Krylov_BackVectors+1)*sizeof(double)
+cudaMalloc((void **) &Krylov_Iterations_D,   Sizeof_Krylov_Iterations );
+cudaMalloc((void **) &Krylov_Basis_D,        Sizeof_Krylov_Basis      );
+cudaMalloc((void **) &Krylov_Hessenberg_D,   Sizeof_Krylov_Hessenberg );
+cudaMalloc((void **) &Krylov_Givens_D,       Sizeof_Krylov_Givens     );
+cudaMalloc((void **) &Krylov_PC_Basis_D,     Sizeof_Krylov_PC_Basis   );
+cudaMalloc((void **) &Krylov_Modified_RHS_D, Sizeof_Modified_RHS      );
+cudaDeviceSynchronize();
+
+}
+
+void FreeCommonBlock() {
+
+// RR: I only freed device memory because I am (a) suspcious about device memory
+// and (b) lazy about host memory
+cudaFree((void *) Krylov_Iterations_D);
+cudaFree((void *) Krylov_Basis_D);
+cudaFree((void *) Krylov_Hessenberg_D);
+cudaFree((void *) Krylov_Givens_D);
+cudaFree((void *) Krylov_PC_Basis_D);
+cudaFree((void *) Krylov_Modified_RHS_D);
 
 }
 

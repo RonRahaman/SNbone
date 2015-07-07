@@ -16,6 +16,7 @@ int main(int argc, char *argv[]) {
 #ifdef WITHBGQHPM
 #include "mpif.h"
 #endif
+#include "CudaMacros.h"
 // Key Problem Size Variables - Specified via user command line input
 int Output_Unit;
 int Input_Scheme;          // The specific scheme to test
@@ -36,6 +37,7 @@ double  MyTime[]={0.0,0.0,0.0};
 
 double *LHS_C, *LHS_Answer;
 double *RHS_C;
+double *LHS_C_D, *RHS_C_D;
 
 int    PP_AllCodes = 15;
 int    PP_NumSegments = 6; // We will repeat the entire set of calculations this many times
@@ -141,6 +143,9 @@ LHS_C      = (double*) malloc(NumAngles*NumVertices*sizeof(double));
 LHS_Answer = (double*) malloc(NumAngles*NumVertices*sizeof(double));
 RHS_C      = (double*) malloc(NumAngles*NumVertices*sizeof(double));
 I_SizeVec = NumAngles*NumVertices;
+cudaMalloc((void **) &LHS_C_D, NumAngles*NumVertices*sizeof(double));
+cudaMalloc((void **) &RHS_C_D, NumAngles*NumVertices*sizeof(double));
+cudaDeviceSynchronize();
 
 // Assemble the matrix noting that it is part of the method 3 timing
 printf("[SN-KERNEL] Building the non-zero space-angle matrices \n");
@@ -195,6 +200,10 @@ printf("[SN-KERNEL].............................................................
    summary_stop(); // This finishes the MPI measurements
    MPI_Finalize();
 #endif
+
+   cudaFree((void *) LHS_C_D);
+   cudaFree((void *) RHS_C_D);
+   FreeCommonBlock();
 }
 
 double GETTHETIME() {
@@ -209,3 +218,4 @@ double SomeReal;
 #endif
 return SomeReal;
 } // END SUBROUTINE GETTHETIME
+
