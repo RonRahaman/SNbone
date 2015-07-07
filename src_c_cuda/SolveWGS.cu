@@ -70,15 +70,15 @@ VectorNorm_Local = (double*) malloc(NumThreads*Krylov_BackVectors*sizeof(double)
    //printf("[SN-KERNEL]...My thread %5d \n",MyThreadID);
    //printf("[SN-KERNEL]...iStart    %5d \n",iStart);
    //printf("[SN-KERNEL]...iEnd      %5d \n",iEnd);
-       FGMRES_Threaded(&Output_Unit,
-       &Krylov_Local_Owned,&Krylov_BackVectors,&Krylov_Maximum_Iterations,&Krylov_Iterations,
-       &Krylov_Absolute_Tolerance,&Krylov_Relative_Tolerance,&Krylov_Divergence_Tolerance,
-       Krylov_Basis,Krylov_Hessenberg,Krylov_Givens,Krylov_PC_Basis,Krylov_Modified_RHS,
-       LHS_C,RHS_C,
-       &MyThreadID,&iStart,&iEnd,
-       &NumThreads,&GuessIsNonZero,&ReasonForConvergence,IterationCount,&ParallelComm,&ParallelRank,
-       &ResidualNorm,&VectorNorm,VectorNorm_Local,VectorNorm_Local,
-       iMethod);
+       FGMRES_Threaded(
+       Krylov_Local_Owned, Krylov_BackVectors, Krylov_Maximum_Iterations, &Krylov_Iterations,
+       Krylov_Absolute_Tolerance, Krylov_Relative_Tolerance, Krylov_Divergence_Tolerance,
+       Krylov_Basis, Krylov_Hessenberg, Krylov_Givens, Krylov_PC_Basis, Krylov_Modified_RHS,
+       LHS_C, RHS_C,
+       MyThreadID, iStart, iEnd,
+       NumThreads, GuessIsNonZero, &ReasonForConvergence, IterationCount, 
+       &ResidualNorm, &VectorNorm, VectorNorm_Local, VectorNorm_Local,
+       *iMethod);
 #ifdef WITHOMP
    }
 #endif
